@@ -2,6 +2,7 @@
 name = "memclean"
 version = "0.1.0"
 description = "Limpiador de RAM de bandeja del sistema para Windows 11"
+license = "MIT"
 edition = "2021"
 
 [build-dependencies]
