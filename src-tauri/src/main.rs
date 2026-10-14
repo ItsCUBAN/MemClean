@@ -149,6 +149,12 @@ fn main() {
         .build();
 
     let app = tauri::Builder::default()
+        // Tiene que ser el primer plugin: si MemClean ya estaba abierto, esta
+        // segunda copia se cierra aquí mismo (antes de crear otro icono de bandeja
+        // o de intentar registrar Ctrl+F1 otra vez) y la primera muestra su ventana.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            window::show(app);
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(shortcut_plugin)
         .manage(AutoState::default())
