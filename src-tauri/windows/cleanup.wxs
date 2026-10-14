@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fragmento para el instalador .msi (WiX).
+
+  Al desinstalar MemClean se borra también la tarea programada de
+  "Iniciar con Windows". No se hace en una actualización
+  (UPGRADINGPRODUCTCODE), porque la versión nueva la sigue usando.
+  Return="ignore": si la tarea no existe, la desinstalación sigue igual.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <CustomAction Id="MemCleanRemoveStartupTask"
+                  Directory="TARGETDIR"
+                  ExeCommand="&quot;[System64Folder]schtasks.exe&quot; /Delete /TN &quot;MemClean&quot; /F"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="MemCleanRemoveStartupTask" Before="RemoveFiles">
+        REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE
+      </Custom>
+    </InstallExecuteSequence>
+
+    <!-- Grupo vacío: solo sirve para que Tauri incluya este fragmento en el .msi. -->
+    <ComponentGroup Id="MemCleanCleanup" />
+  </Fragment>
+</Wix>

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MemClean",
+  "version": "0.1.0",
+  "identifier": "com.memclean.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "publisher": "MemClean",
+    "copyright": "© 2026 MemClean",
+    "category": "Utility",
+    "shortDescription": "Limpiador de RAM para la bandeja del sistema",
+    "longDescription": "MemClean vigila la memoria RAM desde la bandeja del sistema y la libera manual o automáticamente, sin cerrar ningún programa.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "wix": {
+        "language": "es-ES",
+        "upgradeCode": "CA2C67D4-8927-4697-8E6E-96AC3DC7DDBF",
+        "fragmentPaths": ["windows/cleanup.wxs"],
+        "componentGroupRefs": ["MemCleanCleanup"]
+      },
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["Spanish"],
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
+  }
+}

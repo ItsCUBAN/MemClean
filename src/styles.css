@@ -1,0 +1,158 @@
+/* Colores claros por defecto; el bloque de abajo los cambia si Windows usa tema oscuro. */
+:root {
+  --bg: #f3f3f3;
+  --card: #ffffff;
+  --text: #1b1b1b;
+  --muted: #5f5f5f;
+  --track: #e1e1e1;
+  --green: #1f8f4e;
+  --yellow: #c79100;
+  --red: #c42b1c;
+  --neutral: #0067c0;
+  --border: #e5e5e5;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #202020;
+    --card: #2b2b2b;
+    --text: #f3f3f3;
+    --muted: #a8a8a8;
+    --track: #3d3d3d;
+    --green: #3fbf74;
+    --yellow: #f2c037;
+    --red: #ff6b5b;
+    --neutral: #4cc2ff;
+    --border: #383838;
+  }
+}
+
+* { box-sizing: border-box; }
+
+/* Que "hidden" oculte siempre, aunque el elemento tenga display: flex. */
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px "Segoe UI Variable", "Segoe UI", sans-serif;
+  user-select: none;
+}
+
+main {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100vh;
+  overflow-y: auto;
+}
+
+/* Si no cabe todo, que aparezca la barra de desplazamiento en vez de aplastar los bloques. */
+main > * { flex-shrink: 0; }
+
+.block {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.block header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.block header strong { font-variant-numeric: tabular-nums; }
+
+.bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.fill { height: 100%; width: 0; border-radius: 4px; transition: width 0.4s ease; background: var(--green); }
+.fill.warn { background: var(--yellow); }
+.fill.high { background: var(--red); }
+.fill.neutral { background: var(--neutral); }
+
+.values { margin: 6px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+button {
+  height: 42px;
+  border: none;
+  border-radius: 6px;
+  background: var(--neutral);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.error { margin: 0; color: var(--red); }
+
+.warning {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--yellow) 20%, transparent);
+  border: 1px solid var(--yellow);
+}
+
+#last-clean { margin: 0; text-align: center; }
+
+.area-results { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.area-results li { padding: 1px 0; }
+.area-results .ok { color: var(--green); }
+.area-results .fail { color: var(--red); }
+
+.history { list-style: none; margin: 0; padding: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+.history li { display: flex; justify-content: space-between; padding: 2px 0; color: var(--muted); }
+.history li + li { border-top: 1px solid var(--border); }
+.history .freed { color: var(--text); font-weight: 600; }
+
+/* Botón grande + botón de ajustes en la misma fila */
+.actions { display: flex; gap: 8px; }
+.actions #clean-btn { flex: 1; }
+.icon-btn {
+  width: 42px;
+  font-size: 18px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* Pantalla de Ajustes */
+.view-header { display: flex; align-items: center; gap: 8px; }
+.view-header h1 { margin: 0; font-size: 16px; }
+.link-btn {
+  height: auto;
+  padding: 4px 6px;
+  background: none;
+  color: var(--neutral);
+  font-weight: 600;
+}
+#settings-form { display: flex; flex-direction: column; gap: 10px; }
+#settings-form > * { flex-shrink: 0; }
+.block h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
+.check { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.field span { display: flex; align-items: center; gap: 6px; }
+.num {
+  width: 64px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.num:disabled { opacity: 0.5; }
+input[type="range"] { width: 110px; }
+input { accent-color: var(--neutral); }
+output { min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }
+kbd {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-family: inherit;
+  font-size: 12px;
+}
+.ok-msg { margin: 0; color: var(--green); font-weight: 600; }
+.small { margin: 0; font-size: 11px; word-break: break-all; }

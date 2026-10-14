@@ -1,0 +1,79 @@
+# Compila MemClean en los servidores Windows de GitHub.
+#
+# - En cada push a main y en cada pull request: tests + instaladores
+#   (se descargan desde la pestaña "Actions" → la ejecución → "Artifacts").
+# - Al subir una etiqueta de versión (por ejemplo v0.1.0): además crea un
+#   borrador de "Release" con el .msi y el .exe adjuntos. Es un borrador:
+#   no se publica hasta que tú lo revises y pulses "Publish".
+name: Compilar MemClean
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Tests e instaladores
+    runs-on: windows-latest
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Instalar Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Reutilizar la compilación de Rust anterior (más rápido)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Instalar dependencias de la interfaz
+        run: npm ci
+
+      - name: Tests de Rust
+        working-directory: src-tauri
+        run: cargo test --locked
+
+      - name: Compilar los instaladores (.msi y .exe)
+        run: npm run tauri build
+
+      - name: Guardar los instaladores
+        uses: actions/upload-artifact@v4
+        with:
+          name: MemClean-instaladores
+          path: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Borrador de Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Recoger los instaladores
+        uses: actions/download-artifact@v4
+        with:
+          name: MemClean-instaladores
+          path: instaladores
+
+      - name: Crear el borrador de Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: instaladores/**/*

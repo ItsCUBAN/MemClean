@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MemClean</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <!-- Pantalla principal -->
+    <main id="view-main">
+      <section class="block">
+        <header><span>Memoria física</span><strong id="phys-pct">–</strong></header>
+        <div class="bar"><div id="phys-bar" class="fill"></div></div>
+        <p class="values" id="phys-values">Cargando…</p>
+      </section>
+
+      <section class="block">
+        <header><span>Archivo de paginación</span><strong id="page-pct">–</strong></header>
+        <div class="bar"><div id="page-bar" class="fill neutral"></div></div>
+        <p class="values" id="page-values">Cargando…</p>
+      </section>
+
+      <section class="block">
+        <header><span>Caché del sistema</span><strong id="cache-pct">–</strong></header>
+        <div class="bar"><div id="cache-bar" class="fill neutral"></div></div>
+        <p class="values" id="cache-values">Cargando…</p>
+      </section>
+
+      <p id="memory-error" class="error" hidden></p>
+      <p id="admin-warning" class="warning" hidden>
+        MemClean no se está ejecutando como administrador: la limpieza fallará.
+      </p>
+      <ul id="issues" class="area-results"></ul>
+
+      <div class="actions">
+        <button id="clean-btn">Limpiar memoria</button>
+        <button id="settings-btn" class="icon-btn" title="Ajustes" aria-label="Ajustes">⚙</button>
+      </div>
+      <p id="last-clean" class="values">Todavía no se ha limpiado.</p>
+      <ul id="area-results" class="area-results"></ul>
+      <p id="error" class="error" hidden></p>
+
+      <section class="block" id="history-block" hidden>
+        <header><span>Historial</span><small class="values">últimas 10</small></header>
+        <ol id="history" class="history"></ol>
+      </section>
+    </main>
+
+    <!-- Pantalla de Ajustes -->
+    <main id="view-settings" hidden>
+      <div class="view-header">
+        <button type="button" id="settings-back" class="link-btn">← Volver</button>
+        <h1>Ajustes</h1>
+      </div>
+
+      <form id="settings-form">
+        <section class="block">
+          <h2>Limpieza automática</h2>
+          <label class="check"><input type="checkbox" name="auto_clean" /> Activada</label>
+          <label class="field">
+            Limpiar al llegar al
+            <span><input type="range" name="threshold_percent" step="1" /> <output id="threshold-out">70 %</output></span>
+          </label>
+          <label class="field">
+            Espera entre limpiezas
+            <span><input type="number" name="cooldown_minutes" class="num" /> min</span>
+          </label>
+          <label class="field">
+            <span><input type="checkbox" name="interval_enabled" /> Limpiar también cada</span>
+            <span><input type="number" name="interval_minutes" class="num" /> min</span>
+          </label>
+        </section>
+
+        <section class="block">
+          <h2>Áreas a limpiar</h2>
+          <div id="areas-list"></div>
+        </section>
+
+        <section class="block">
+          <h2>General</h2>
+          <label class="check">
+            <input type="checkbox" name="hotkey_enabled" /> Atajo global <kbd id="hotkey-label">Ctrl+F1</kbd>
+          </label>
+          <label class="check"><input type="checkbox" name="start_with_windows" /> Iniciar con Windows</label>
+          <label class="check">
+            <input type="checkbox" name="start_minimized" /> Iniciar minimizado (solo en la bandeja)
+          </label>
+          <label class="check"><input type="checkbox" name="notifications" /> Notificaciones</label>
+        </section>
+
+        <p id="settings-ok" class="ok-msg" hidden></p>
+        <ul id="settings-problems" class="area-results"></ul>
+        <button type="submit" id="settings-save">Guardar</button>
+        <p id="config-path" class="values small"></p>
+      </form>
+    </main>
+  </body>
+</html>
