@@ -4,28 +4,37 @@
 use tauri::AppHandle;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
+use crate::i18n::tr;
 use crate::settings::Settings;
 
 /// Convierte un texto como "Ctrl+F1" en un atajo que Windows entiende.
 pub fn parse(text: &str) -> Result<Shortcut, String> {
-    text.parse::<Shortcut>()
-        .map_err(|e| format!("El atajo «{text}» no es válido: {e}"))
+    text.parse::<Shortcut>().map_err(|e| {
+        tr(
+            format!("El atajo «{text}» no es válido: {e}"),
+            format!("The hotkey \"{text}\" is not valid: {e}"),
+        )
+    })
 }
 
 /// Quita el atajo anterior y registra el de los ajustes (si está activado).
 pub fn apply(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     let shortcuts = app.global_shortcut();
-    shortcuts
-        .unregister_all()
-        .map_err(|e| format!("No se pudo quitar el atajo anterior: {e}"))?;
+    shortcuts.unregister_all().map_err(|e| {
+        tr(
+            format!("No se pudo quitar el atajo anterior: {e}"),
+            format!("Could not remove the previous hotkey: {e}"),
+        )
+    })?;
     if !settings.hotkey_enabled {
         return Ok(());
     }
     let shortcut = parse(&settings.hotkey)?;
     shortcuts.register(shortcut).map_err(|e| {
-        format!(
-            "No se pudo activar el atajo {}: puede que otro programa ya lo use. ({e})",
-            settings.hotkey
+        let hotkey = &settings.hotkey;
+        tr(
+            format!("No se pudo activar el atajo {hotkey}: puede que otro programa ya lo use. ({e})"),
+            format!("Could not enable the hotkey {hotkey}: another program may be using it. ({e})"),
         )
     })
 }

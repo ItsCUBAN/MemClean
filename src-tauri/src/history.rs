@@ -11,11 +11,12 @@ use crate::cleaner::CleanReport;
 
 pub const MAX_ENTRIES: usize = 10;
 
+/// Una limpieza del historial. El texto "Limpieza manual", "Automatic cleaning"…
+/// lo pone la ventana a partir de `trigger`, así cambia si se cambia de idioma.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryEntry {
     pub trigger: Trigger,
-    pub trigger_label: &'static str,
     pub report: CleanReport,
 }
 
@@ -25,7 +26,7 @@ pub struct History(Mutex<VecDeque<HistoryEntry>>);
 impl History {
     /// Añade una limpieza; si ya hay 10, se olvida la más antigua.
     pub fn push(&self, trigger: Trigger, report: CleanReport) -> HistoryEntry {
-        let entry = HistoryEntry { trigger, trigger_label: trigger.label(), report };
+        let entry = HistoryEntry { trigger, report };
         if let Ok(mut list) = self.0.lock() {
             list.push_front(entry.clone());
             list.truncate(MAX_ENTRIES);
@@ -63,6 +64,6 @@ mod tests {
     fn stores_what_triggered_it() {
         let history = History::default();
         history.push(Trigger::Tray, report(1));
-        assert_eq!(history.entries()[0].trigger_label, "Limpieza manual");
+        assert_eq!(history.entries()[0].trigger, Trigger::Tray);
     }
 }

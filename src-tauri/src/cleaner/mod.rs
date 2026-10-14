@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::tr;
 use crate::memory;
 
 /// Las zonas de memoria que MemClean sabe limpiar.
@@ -34,17 +35,6 @@ impl Area {
         Area::CombineMemoryLists,
     ];
 
-    pub fn label(self) -> &'static str {
-        match self {
-            Area::WorkingSets => "Working sets de procesos",
-            Area::SystemFileCache => "Caché de archivos del sistema",
-            Area::ModifiedList => "Lista Modified",
-            Area::StandbyList => "Lista Standby",
-            Area::LowPriorityStandby => "Standby de baja prioridad",
-            Area::CombineMemoryLists => "Combinar listas de memoria",
-        }
-    }
-
     pub fn enabled_by_default(self) -> bool {
         !matches!(self, Area::LowPriorityStandby | Area::CombineMemoryLists)
     }
@@ -66,11 +56,11 @@ impl Area {
 }
 
 /// Resultado de un área: `error` vacío significa que fue bien.
+/// (El nombre del área lo pone la ventana en el idioma elegido.)
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AreaResult {
     pub area: Area,
-    pub label: &'static str,
     pub error: Option<String>,
 }
 
@@ -93,10 +83,16 @@ pub fn clean(selected: &[Area]) -> Result<CleanReport, String> {
     let _guard = match CLEANING.try_lock() {
         Ok(guard) => guard,
         Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
-        Err(TryLockError::WouldBlock) => return Err("Ya hay una limpieza en curso.".into()),
+        Err(TryLockError::WouldBlock) => {
+            return Err(tr("Ya hay una limpieza en curso.", "A cleaning is already running.").into())
+        }
     };
     if selected.is_empty() {
-        return Err("No hay ninguna área seleccionada para limpiar.".into());
+        return Err(tr(
+            "No hay ninguna área seleccionada para limpiar.",
+            "No area is selected for cleaning.",
+        )
+        .into());
     }
 
     let (_, before) = memory::physical_memory()?;
@@ -117,7 +113,7 @@ pub fn clean(selected: &[Area]) -> Result<CleanReport, String> {
                 };
                 privilege_error.clone().unwrap_or(err)
             });
-            AreaResult { area, label: area.label(), error }
+            AreaResult { area, error }
         })
         .collect();
 

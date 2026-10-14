@@ -6,6 +6,8 @@
 use std::ffi::c_void;
 use std::mem::size_of;
 
+use crate::i18n::tr;
+
 const SYSTEM_FILE_CACHE_INFORMATION: u32 = 21;
 const SYSTEM_MEMORY_LIST_INFORMATION: u32 = 80;
 const SYSTEM_COMBINE_PHYSICAL_MEMORY_INFORMATION: u32 = 130;
@@ -75,10 +77,25 @@ pub fn combine_physical_memory() -> Result<(), i32> {
 /// Traduce los códigos de error de Windows más habituales a algo comprensible.
 pub fn status_message(status: i32) -> String {
     match status as u32 {
-        0xC000_0061 => "falta el privilegio necesario (¿se está ejecutando como administrador?)".into(),
-        0xC000_0022 => "acceso denegado (se necesita administrador)".into(),
-        0xC000_0003 | 0xC000_0002 => "esta versión de Windows no lo admite".into(),
-        code => format!("Windows devolvió el código 0x{code:08X}"),
+        0xC000_0061 => tr(
+            "falta el privilegio necesario (¿se está ejecutando como administrador?)",
+            "missing the required privilege (is it running as administrator?)",
+        )
+        .into(),
+        0xC000_0022 => tr(
+            "acceso denegado (se necesita administrador)",
+            "access denied (administrator required)",
+        )
+        .into(),
+        0xC000_0003 | 0xC000_0002 => tr(
+            "esta versión de Windows no lo admite",
+            "this version of Windows does not support it",
+        )
+        .into(),
+        code => tr(
+            format!("Windows devolvió el código 0x{code:08X}"),
+            format!("Windows returned code 0x{code:08X}"),
+        ),
     }
 }
 

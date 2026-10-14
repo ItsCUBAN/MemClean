@@ -17,6 +17,8 @@ use windows::Win32::Security::{
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
+use crate::i18n::tr;
+
 pub const PROFILE_SINGLE_PROCESS: PCWSTR = w!("SeProfileSingleProcessPrivilege");
 pub const INCREASE_QUOTA: PCWSTR = w!("SeIncreaseQuotaPrivilege");
 
@@ -28,7 +30,7 @@ impl Token {
         let mut handle = HANDLE::default();
         // SAFETY: pasamos un puntero válido donde Windows deja el identificador.
         unsafe { OpenProcessToken(GetCurrentProcess(), access, &mut handle) }
-            .map_err(|e| format!("no se pudo abrir el token del proceso: {e}"))?;
+            .map_err(|e| tr(format!("no se pudo abrir el token del proceso: {e}"), format!("could not open the process token: {e}")))?;
         Ok(Self(handle))
     }
 }
@@ -47,7 +49,7 @@ pub fn enable(name: PCWSTR) -> Result<(), String> {
     let mut luid = LUID::default();
     // SAFETY: `name` es una cadena constante terminada en cero (macro w!).
     unsafe { LookupPrivilegeValueW(PCWSTR::null(), name, &mut luid) }
-        .map_err(|e| format!("privilegio desconocido: {e}"))?;
+        .map_err(|e| tr(format!("privilegio desconocido: {e}"), format!("unknown privilege: {e}")))?;
 
     let privileges = TOKEN_PRIVILEGES {
         PrivilegeCount: 1,
@@ -55,13 +57,17 @@ pub fn enable(name: PCWSTR) -> Result<(), String> {
     };
     // SAFETY: `privileges` vive durante la llamada; no pedimos el estado anterior.
     unsafe { AdjustTokenPrivileges(token.0, false, Some(&privileges), 0, None, None) }
-        .map_err(|e| format!("no se pudo activar el privilegio: {e}"))?;
+        .map_err(|e| tr(format!("no se pudo activar el privilegio: {e}"), format!("could not enable the privilege: {e}")))?;
 
     // AdjustTokenPrivileges dice "éxito" aunque no haya podido activarlo;
     // el aviso real viene en GetLastError.
     // SAFETY: solo lee el último error del hilo actual.
     if unsafe { GetLastError() } == ERROR_NOT_ALL_ASSIGNED {
-        return Err("el usuario no tiene este privilegio (hace falta ejecutar como administrador)".into());
+        return Err(tr(
+            "el usuario no tiene este privilegio (hace falta ejecutar como administrador)",
+            "the user does not have this privilege (run as administrator)",
+        )
+        .into());
     }
     Ok(())
 }

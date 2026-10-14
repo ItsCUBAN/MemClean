@@ -143,6 +143,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   font: inherit;
 }
 .num:disabled { opacity: 0.5; }
+.select { width: auto; max-width: 190px; }
 input[type="range"] { width: 110px; }
 input { accent-color: var(--neutral); }
 output { min-width: 38px; text-align: right; font-variant-numeric: tabular-nums; }

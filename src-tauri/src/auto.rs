@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
+use crate::i18n::tr;
+
 /// Qué provocó una limpieza.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,12 +25,13 @@ pub enum Trigger {
 }
 
 impl Trigger {
+    /// Nombre para las notificaciones (la ventana usa su propio diccionario).
     pub fn label(self) -> &'static str {
         match self {
-            Trigger::Button | Trigger::Tray => "Limpieza manual",
-            Trigger::Hotkey => "Limpieza con atajo",
-            Trigger::Threshold => "Limpieza automática",
-            Trigger::Interval => "Limpieza programada",
+            Trigger::Button | Trigger::Tray => tr("Limpieza manual", "Manual cleaning"),
+            Trigger::Hotkey => tr("Limpieza con atajo", "Hotkey cleaning"),
+            Trigger::Threshold => tr("Limpieza automática", "Automatic cleaning"),
+            Trigger::Interval => tr("Limpieza programada", "Scheduled cleaning"),
         }
     }
 }

@@ -7,6 +7,7 @@ mod cleaner;
 mod commands;
 mod history;
 mod hotkey;
+mod i18n;
 mod memory;
 mod ntapi;
 mod settings;
@@ -23,6 +24,7 @@ use tauri_plugin_notification::NotificationExt;
 
 use auto::{AutoState, Trigger};
 use history::{History, HistoryEntry};
+use i18n::{tr, LanguagePref};
 use settings::{Settings, SettingsState};
 
 /// Problemas al arrancar, para enseñarlos cuando se abra la ventana.
@@ -83,13 +85,14 @@ pub fn start_clean(app: &AppHandle, trigger: Trigger) {
 
 fn notify(app: &AppHandle, entry: &HistoryEntry) {
     let failed = entry.report.results.iter().filter(|r| r.error.is_some()).count();
-    let mut body = format!(
-        "{}: {} liberados.",
-        entry.trigger_label,
-        format_freed(entry.report.freed_bytes)
-    );
+    let label = entry.trigger.label();
+    let freed = format_freed(entry.report.freed_bytes);
+    let mut body = tr(format!("{label}: {freed} liberados."), format!("{label}: {freed} freed."));
     if failed > 0 {
-        body.push_str(&format!(" {failed} área(s) fallaron; ábrela para ver el motivo."));
+        body.push_str(&tr(
+            format!(" {failed} área(s) fallaron; ábrela para ver el motivo."),
+            format!(" {failed} area(s) failed; open MemClean to see why."),
+        ));
     }
     let _ = app.notification().builder().title("MemClean").body(body).show();
 }
@@ -138,7 +141,11 @@ fn monitor(app: AppHandle, tray_icon: tauri::tray::TrayIcon) {
 }
 
 fn main() {
+    // Idioma de Windows mientras se leen los ajustes (por si hay que avisar de un
+    // error en el archivo); después, el idioma que diga el propio archivo.
+    i18n::set(i18n::resolve(LanguagePref::Auto));
     let (settings, settings_warning) = settings::load();
+    i18n::set(i18n::resolve(settings.language));
 
     let shortcut_plugin = tauri_plugin_global_shortcut::Builder::new()
         .with_handler(|app, _shortcut, event| {
@@ -164,6 +171,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_memory,
             commands::is_admin,
+            commands::get_language,
             commands::get_history,
             commands::get_startup_issues,
             commands::clean_now,

@@ -8,42 +8,44 @@
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
+    <!-- Los textos con data-i18n se traducen desde src/i18n.ts. -->
+
     <!-- Pantalla principal -->
     <main id="view-main">
       <section class="block">
-        <header><span>Memoria física</span><strong id="phys-pct">–</strong></header>
+        <header><span data-i18n="physical">Memoria física</span><strong id="phys-pct">–</strong></header>
         <div class="bar"><div id="phys-bar" class="fill"></div></div>
-        <p class="values" id="phys-values">Cargando…</p>
+        <p class="values" id="phys-values" data-i18n="loading">Cargando…</p>
       </section>
 
       <section class="block">
-        <header><span>Archivo de paginación</span><strong id="page-pct">–</strong></header>
+        <header><span data-i18n="pageFile">Archivo de paginación</span><strong id="page-pct">–</strong></header>
         <div class="bar"><div id="page-bar" class="fill neutral"></div></div>
-        <p class="values" id="page-values">Cargando…</p>
+        <p class="values" id="page-values" data-i18n="loading">Cargando…</p>
       </section>
 
       <section class="block">
-        <header><span>Caché del sistema</span><strong id="cache-pct">–</strong></header>
+        <header><span data-i18n="systemCache">Caché del sistema</span><strong id="cache-pct">–</strong></header>
         <div class="bar"><div id="cache-bar" class="fill neutral"></div></div>
-        <p class="values" id="cache-values">Cargando…</p>
+        <p class="values" id="cache-values" data-i18n="loading">Cargando…</p>
       </section>
 
       <p id="memory-error" class="error" hidden></p>
-      <p id="admin-warning" class="warning" hidden>
+      <p id="admin-warning" class="warning" data-i18n="adminWarning" hidden>
         MemClean no se está ejecutando como administrador: la limpieza fallará.
       </p>
       <ul id="issues" class="area-results"></ul>
 
       <div class="actions">
-        <button id="clean-btn">Limpiar memoria</button>
-        <button id="settings-btn" class="icon-btn" title="Ajustes" aria-label="Ajustes">⚙</button>
+        <button id="clean-btn" data-i18n="clean">Limpiar memoria</button>
+        <button id="settings-btn" class="icon-btn" data-i18n-title="settings" title="Ajustes" aria-label="Ajustes">⚙</button>
       </div>
-      <p id="last-clean" class="values">Todavía no se ha limpiado.</p>
+      <p id="last-clean" class="values" data-i18n="neverCleaned">Todavía no se ha limpiado.</p>
       <ul id="area-results" class="area-results"></ul>
       <p id="error" class="error" hidden></p>
 
       <section class="block" id="history-block" hidden>
-        <header><span>Historial</span><small class="values">últimas 10</small></header>
+        <header><span data-i18n="history">Historial</span><small class="values" data-i18n="last10">últimas 10</small></header>
         <ol id="history" class="history"></ol>
       </section>
     </main>
@@ -51,48 +53,57 @@
     <!-- Pantalla de Ajustes -->
     <main id="view-settings" hidden>
       <div class="view-header">
-        <button type="button" id="settings-back" class="link-btn">← Volver</button>
-        <h1>Ajustes</h1>
+        <button type="button" id="settings-back" class="link-btn" data-i18n="back">← Volver</button>
+        <h1 data-i18n="settings">Ajustes</h1>
       </div>
 
       <form id="settings-form">
         <section class="block">
-          <h2>Limpieza automática</h2>
-          <label class="check"><input type="checkbox" name="auto_clean" /> Activada</label>
+          <h2 data-i18n="autoSection">Limpieza automática</h2>
+          <label class="check"><input type="checkbox" name="auto_clean" /> <span data-i18n="enabled">Activada</span></label>
           <label class="field">
-            Limpiar al llegar al
+            <span data-i18n="thresholdLabel">Limpiar al llegar al</span>
             <span><input type="range" name="threshold_percent" step="1" /> <output id="threshold-out">70 %</output></span>
           </label>
           <label class="field">
-            Espera entre limpiezas
-            <span><input type="number" name="cooldown_minutes" class="num" /> min</span>
+            <span data-i18n="cooldownLabel">Espera entre limpiezas</span>
+            <span><input type="number" name="cooldown_minutes" class="num" /> <span data-i18n="minutes">min</span></span>
           </label>
           <label class="field">
-            <span><input type="checkbox" name="interval_enabled" /> Limpiar también cada</span>
-            <span><input type="number" name="interval_minutes" class="num" /> min</span>
+            <span><input type="checkbox" name="interval_enabled" /> <span data-i18n="intervalLabel">Limpiar también cada</span></span>
+            <span><input type="number" name="interval_minutes" class="num" /> <span data-i18n="minutes">min</span></span>
           </label>
         </section>
 
         <section class="block">
-          <h2>Áreas a limpiar</h2>
+          <h2 data-i18n="areasSection">Áreas a limpiar</h2>
           <div id="areas-list"></div>
         </section>
 
         <section class="block">
-          <h2>General</h2>
-          <label class="check">
-            <input type="checkbox" name="hotkey_enabled" /> Atajo global <kbd id="hotkey-label">Ctrl+F1</kbd>
+          <h2 data-i18n="generalSection">General</h2>
+          <label class="field">
+            <span data-i18n="language">Idioma</span>
+            <select name="language" class="num select">
+              <option value="auto" data-i18n="languageAuto">Automático (Windows)</option>
+              <option value="es">Español</option>
+              <option value="en">English</option>
+            </select>
           </label>
-          <label class="check"><input type="checkbox" name="start_with_windows" /> Iniciar con Windows</label>
           <label class="check">
-            <input type="checkbox" name="start_minimized" /> Iniciar minimizado (solo en la bandeja)
+            <input type="checkbox" name="hotkey_enabled" /> <span data-i18n="hotkey">Atajo global</span>
+            <kbd id="hotkey-label">Ctrl+F1</kbd>
           </label>
-          <label class="check"><input type="checkbox" name="notifications" /> Notificaciones</label>
+          <label class="check"><input type="checkbox" name="start_with_windows" /> <span data-i18n="startWithWindows">Iniciar con Windows</span></label>
+          <label class="check">
+            <input type="checkbox" name="start_minimized" /> <span data-i18n="startMinimized">Iniciar minimizado (solo en la bandeja)</span>
+          </label>
+          <label class="check"><input type="checkbox" name="notifications" /> <span data-i18n="notifications">Notificaciones</span></label>
         </section>
 
         <p id="settings-ok" class="ok-msg" hidden></p>
         <ul id="settings-problems" class="area-results"></ul>
-        <button type="submit" id="settings-save">Guardar</button>
+        <button type="submit" id="settings-save" data-i18n="save">Guardar</button>
         <p id="config-path" class="values small"></p>
       </form>
     </main>

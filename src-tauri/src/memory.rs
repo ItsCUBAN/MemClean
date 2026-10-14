@@ -6,6 +6,7 @@ use windows::Win32::System::SystemInformation::{
     GetSystemInfo, GlobalMemoryStatusEx, MEMORYSTATUSEX, SYSTEM_INFO,
 };
 
+use crate::i18n::tr;
 use crate::ntapi;
 
 /// Foto de la memoria en un instante. Todos los tamaños van en bytes;
@@ -86,7 +87,12 @@ pub fn physical_memory() -> Result<(u64, u64), String> {
     };
     // SAFETY: `status` tiene `dwLength` correcto, como exige la API.
     unsafe { GlobalMemoryStatusEx(&mut status) }
-        .map_err(|e| format!("No se pudo leer la memoria (GlobalMemoryStatusEx): {e}"))?;
+        .map_err(|e| {
+            tr(
+                format!("No se pudo leer la memoria (GlobalMemoryStatusEx): {e}"),
+                format!("Could not read memory (GlobalMemoryStatusEx): {e}"),
+            )
+        })?;
     Ok((status.ullTotalPhys, status.ullAvailPhys))
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "memclean"
-version = "0.1.0"
+version = "0.1.1"
 description = "Limpiador de RAM de bandeja del sistema para Windows 11"
 license = "MIT"
 edition = "2021"
@@ -18,6 +18,7 @@ toml = "1"
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 windows = { version = "0.62", features = [
   "Win32_Foundation",
+  "Win32_Globalization",
   "Win32_Security",
   "Win32_System_Memory",
   "Win32_System_SystemInformation",

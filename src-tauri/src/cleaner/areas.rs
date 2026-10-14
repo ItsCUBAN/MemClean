@@ -3,6 +3,7 @@
 
 use windows::Win32::System::Memory::SetSystemFileCacheSize;
 
+use crate::i18n::tr;
 use crate::ntapi::{self, MemoryListCommand};
 
 fn list_command(command: MemoryListCommand) -> Result<(), String> {
@@ -19,7 +20,12 @@ pub fn working_sets() -> Result<(), String> {
 pub fn system_file_cache() -> Result<(), String> {
     // SAFETY: llamada sin punteros; solo pasa números.
     unsafe { SetSystemFileCacheSize(usize::MAX, usize::MAX, 0) }
-        .map_err(|e| format!("no se pudo vaciar la caché de archivos: {}", e.message()))
+        .map_err(|e| {
+            tr(
+                format!("no se pudo vaciar la caché de archivos: {}", e.message()),
+                format!("could not empty the file cache: {}", e.message()),
+            )
+        })
 }
 
 /// Escribe en disco las páginas modificadas y las pasa a la lista Standby.

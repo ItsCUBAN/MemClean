@@ -9,6 +9,8 @@ use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::i18n::tr;
+
 const TASK_NAME: &str = "MemClean";
 /// Evita que se vea una consola negra al lanzar schtasks.exe.
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -25,7 +27,12 @@ fn schtasks(args: &[&str]) -> Result<(), String> {
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
-        .map_err(|e| format!("No se pudo ejecutar schtasks.exe: {e}"))?;
+        .map_err(|e| {
+            tr(
+                format!("No se pudo ejecutar schtasks.exe: {e}"),
+                format!("Could not run schtasks.exe: {e}"),
+            )
+        })?;
     if output.status.success() {
         Ok(())
     } else {
@@ -41,8 +48,12 @@ pub fn is_enabled() -> bool {
 
 /// Crea (o actualiza) la tarea para que apunte a este mismo .exe.
 pub fn enable() -> Result<(), String> {
-    let exe = std::env::current_exe()
-        .map_err(|e| format!("No se pudo saber dónde está MemClean: {e}"))?;
+    let exe = std::env::current_exe().map_err(|e| {
+        tr(
+            format!("No se pudo saber dónde está MemClean: {e}"),
+            format!("Could not find where MemClean is installed: {e}"),
+        )
+    })?;
     let user = current_user()?;
     let xml = task_xml(&exe.to_string_lossy(), &user);
 
@@ -50,15 +61,26 @@ pub fn enable() -> Result<(), String> {
     let file = std::env::temp_dir().join(format!("memclean-task-{}.xml", std::process::id()));
     let mut bytes = vec![0xFF, 0xFE]; // marca de UTF-16 LE
     bytes.extend(xml.encode_utf16().flat_map(u16::to_le_bytes));
-    fs::write(&file, bytes).map_err(|e| format!("No se pudo preparar la tarea programada: {e}"))?;
+    fs::write(&file, bytes).map_err(|e| {
+        tr(
+            format!("No se pudo preparar la tarea programada: {e}"),
+            format!("Could not prepare the scheduled task: {e}"),
+        )
+    })?;
 
     let file_arg = file.to_string_lossy().to_string();
     let result = schtasks(&["/Create", "/TN", TASK_NAME, "/XML", &file_arg, "/F"]);
     let _ = fs::remove_file(&file);
     result.map_err(|detail| {
-        format!(
-            "Windows no dejó crear la tarea para iniciar con Windows. \
-             MemClean debe ejecutarse como administrador. ({detail})"
+        tr(
+            format!(
+                "Windows no dejó crear la tarea para iniciar con Windows. \
+                 MemClean debe ejecutarse como administrador. ({detail})"
+            ),
+            format!(
+                "Windows did not allow creating the task to start with Windows. \
+                 MemClean must run as administrator. ({detail})"
+            ),
         )
     })
 }
@@ -68,12 +90,18 @@ pub fn disable() -> Result<(), String> {
     if !is_enabled() {
         return Ok(());
     }
-    schtasks(&["/Delete", "/TN", TASK_NAME, "/F"])
-        .map_err(|detail| format!("No se pudo quitar el inicio con Windows. ({detail})"))
+    schtasks(&["/Delete", "/TN", TASK_NAME, "/F"]).map_err(|detail| {
+        tr(
+            format!("No se pudo quitar el inicio con Windows. ({detail})"),
+            format!("Could not remove start with Windows. ({detail})"),
+        )
+    })
 }
 
 fn current_user() -> Result<String, String> {
-    let name = std::env::var("USERNAME").map_err(|_| "No se pudo saber el usuario actual.")?;
+    let name = std::env::var("USERNAME").map_err(|_| {
+        tr("No se pudo saber el usuario actual.", "Could not find the current user.")
+    })?;
     Ok(match std::env::var("USERDOMAIN") {
         Ok(domain) if !domain.is_empty() => format!("{domain}\\{name}"),
         _ => name,

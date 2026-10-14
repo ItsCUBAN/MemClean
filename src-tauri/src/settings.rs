@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auto::Policy;
 use crate::cleaner::Area;
+use crate::i18n::{tr, LanguagePref};
 
 pub const THRESHOLD_RANGE: (u8, u8) = (50, 95);
 pub const COOLDOWN_RANGE: (u32, u32) = (1, 120);
@@ -31,6 +32,8 @@ pub struct Settings {
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub notifications: bool,
+    /// "auto" (idioma de Windows), "es" o "en".
+    pub language: LanguagePref,
 }
 
 impl Default for Settings {
@@ -47,6 +50,7 @@ impl Default for Settings {
             start_with_windows: false,
             start_minimized: false,
             notifications: true,
+            language: LanguagePref::Auto,
         }
     }
 }
@@ -72,7 +76,11 @@ impl Settings {
     /// Comprueba lo que llega desde la ventana antes de aceptarlo.
     pub fn validate(&self) -> Result<(), String> {
         if self.areas.is_empty() {
-            return Err("Marca al menos un área para limpiar.".into());
+            return Err(tr(
+                "Marca al menos un área para limpiar.",
+                "Select at least one area to clean.",
+            )
+            .into());
         }
         Ok(())
     }
@@ -105,8 +113,10 @@ impl SettingsState {
 
 /// %APPDATA%\MemClean\config.toml
 pub fn config_path() -> Result<PathBuf, String> {
-    let appdata = std::env::var_os("APPDATA")
-        .ok_or("No se encontró la carpeta %APPDATA% de Windows.")?;
+    let appdata = std::env::var_os("APPDATA").ok_or(tr(
+        "No se encontró la carpeta %APPDATA% de Windows.",
+        "The Windows %APPDATA% folder was not found.",
+    ))?;
     Ok(PathBuf::from(appdata).join("MemClean").join("config.toml"))
 }
 
@@ -125,17 +135,27 @@ pub fn load_from(path: &Path) -> (Settings, Option<String>) {
         // Primera vez: todavía no hay archivo; no es un error.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Settings::default(), None),
         Err(e) => {
-            let warning = format!("No se pudieron leer los ajustes ({}): {e}", path.display());
+            let warning = tr(
+                format!("No se pudieron leer los ajustes ({}): {e}", path.display()),
+                format!("Could not read the settings ({}): {e}", path.display()),
+            );
             return (Settings::default(), Some(warning));
         }
     };
     match toml::from_str::<Settings>(&text) {
         Ok(settings) => (settings.sanitized(), None),
         Err(e) => {
-            let warning = format!(
-                "El archivo de ajustes tiene un error y se usan los valores por defecto. \
-                 No se ha borrado; corrígelo o guarda los ajustes de nuevo. ({}): {e}",
-                path.display()
+            let warning = tr(
+                format!(
+                    "El archivo de ajustes tiene un error y se usan los valores por defecto. \
+                     No se ha borrado; corrígelo o guarda los ajustes de nuevo. ({}): {e}",
+                    path.display()
+                ),
+                format!(
+                    "The settings file has an error, so the defaults are used. \
+                     It was not deleted; fix it or save the settings again. ({}): {e}",
+                    path.display()
+                ),
             );
             (Settings::default(), Some(warning))
         }
@@ -150,15 +170,33 @@ pub fn save(settings: &Settings) -> Result<(), String> {
 /// se apaga a mitad, el config.toml anterior queda intacto.
 pub fn save_to(path: &Path, settings: &Settings) -> Result<(), String> {
     if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)
-            .map_err(|e| format!("No se pudo crear la carpeta {}: {e}", dir.display()))?;
+        fs::create_dir_all(dir).map_err(|e| {
+            tr(
+                format!("No se pudo crear la carpeta {}: {e}", dir.display()),
+                format!("Could not create the folder {}: {e}", dir.display()),
+            )
+        })?;
     }
-    let text = toml::to_string_pretty(settings)
-        .map_err(|e| format!("No se pudieron convertir los ajustes a texto: {e}"))?;
-    let content = format!("# Ajustes de MemClean. Puedes editarlos con la app cerrada.\n\n{text}");
+    let text = toml::to_string_pretty(settings).map_err(|e| {
+        tr(
+            format!("No se pudieron convertir los ajustes a texto: {e}"),
+            format!("Could not convert the settings to text: {e}"),
+        )
+    })?;
+    let header = tr(
+        "# Ajustes de MemClean. Puedes editarlos con la app cerrada.",
+        "# MemClean settings. You can edit them while the app is closed.",
+    );
+    let content = format!("{header}\n\n{text}");
+    let save_error = |e: std::io::Error| {
+        tr(
+            format!("No se pudieron guardar los ajustes: {e}"),
+            format!("Could not save the settings: {e}"),
+        )
+    };
     let tmp = path.with_extension("toml.tmp");
-    fs::write(&tmp, content).map_err(|e| format!("No se pudieron guardar los ajustes: {e}"))?;
-    fs::rename(&tmp, path).map_err(|e| format!("No se pudieron guardar los ajustes: {e}"))
+    fs::write(&tmp, content).map_err(save_error)?;
+    fs::rename(&tmp, path).map_err(save_error)
 }
 
 #[cfg(test)]
@@ -181,6 +219,16 @@ mod tests {
         assert_eq!(s.hotkey, "Ctrl+F1");
         assert_eq!(s.areas, Area::defaults());
         assert!(s.notifications);
+        assert_eq!(s.language, LanguagePref::Auto);
+    }
+
+    #[test]
+    fn config_from_older_version_gets_automatic_language() {
+        // Un config.toml de la versión 0.1.0 no tiene "language".
+        let s: Settings = toml::from_str("auto_clean = true\nthreshold_percent = 70").expect("toml");
+        assert_eq!(s.language, LanguagePref::Auto);
+        let english: Settings = toml::from_str(r#"language = "en""#).expect("toml");
+        assert_eq!(english.language, LanguagePref::En);
     }
 
     #[test]

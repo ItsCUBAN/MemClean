@@ -8,27 +8,62 @@ use tauri::tray::{MouseButton, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
 
 use crate::auto::Trigger;
+use crate::i18n::tr;
 use crate::memory::MemoryStats;
 use crate::settings::SettingsState;
 use crate::window;
 
-/// La casilla "Limpieza automática" del menú, para marcarla o desmarcarla
-/// cuando se cambia desde la ventana de Ajustes.
-pub struct AutoMenuItem(pub CheckMenuItem<Wry>);
+/// Textos del menú en el idioma activo.
+fn labels() -> [&'static str; 5] {
+    [
+        tr("Limpiar ahora", "Clean now"),
+        tr("Mostrar ventana", "Show window"),
+        tr("Limpieza automática", "Automatic cleaning"),
+        tr("Ajustes", "Settings"),
+        tr("Salir", "Exit"),
+    ]
+}
+
+/// Los elementos del menú, para cambiarles el texto si se cambia de idioma
+/// y marcar o desmarcar "Limpieza automática" desde la ventana de Ajustes.
+pub struct TrayMenu {
+    clean: MenuItem<Wry>,
+    show: MenuItem<Wry>,
+    auto: CheckMenuItem<Wry>,
+    settings: MenuItem<Wry>,
+    quit: MenuItem<Wry>,
+}
+
+impl TrayMenu {
+    pub fn set_auto_checked(&self, checked: bool) {
+        let _ = self.auto.set_checked(checked);
+    }
+
+    /// Vuelve a poner los textos en el idioma activo.
+    pub fn retranslate(&self) {
+        let [clean, show, auto, settings, quit] = labels();
+        let _ = self.clean.set_text(clean);
+        let _ = self.show.set_text(show);
+        let _ = self.auto.set_text(auto);
+        let _ = self.settings.set_text(settings);
+        let _ = self.quit.set_text(quit);
+    }
+}
 
 /// Crea el icono de la bandeja con su menú.
 pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
-    let clean = MenuItem::with_id(app, "clean", "Limpiar ahora", true, None::<&str>)?;
-    let show = MenuItem::with_id(app, "show", "Mostrar ventana", true, None::<&str>)?;
+    let [clean_text, show_text, auto_text, settings_text, quit_text] = labels();
+    let clean = MenuItem::with_id(app, "clean", clean_text, true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", show_text, true, None::<&str>)?;
     let auto_on = app.state::<SettingsState>().get().auto_clean;
-    let auto = CheckMenuItem::with_id(app, "auto", "Limpieza automática", true, auto_on, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Ajustes", true, None::<&str>)?;
+    let auto = CheckMenuItem::with_id(app, "auto", auto_text, true, auto_on, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", settings_text, true, None::<&str>)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "Salir", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", quit_text, true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&clean, &show, &auto, &settings, &separator, &quit])?;
-    app.manage(AutoMenuItem(auto.clone()));
 
     let auto_item = auto.clone();
+    app.manage(TrayMenu { clean, show, auto, settings, quit });
     TrayIconBuilder::with_id("main")
         .icon(Image::new_owned(icon::render(0), icon::SIZE, icon::SIZE))
         .tooltip("MemClean")
@@ -76,10 +111,12 @@ impl TrayUpdater {
         }
 
         const GB: f64 = 1024.0 * 1024.0 * 1024.0;
-        let tooltip = format!(
-            "MemClean — RAM {percent} %\n{:.1} GB de {:.1} GB en uso",
-            stats.phys_used as f64 / GB,
-            stats.phys_total as f64 / GB,
+        let used = stats.phys_used as f64 / GB;
+        let total = stats.phys_total as f64 / GB;
+        // Al cambiar de idioma cambia el texto, así que se actualiza solo al segundo siguiente.
+        let tooltip = tr(
+            format!("MemClean — RAM {percent} %\n{used:.1} GB de {total:.1} GB en uso"),
+            format!("MemClean — RAM {percent}%\n{used:.1} GB of {total:.1} GB in use"),
         );
         if tooltip != self.last_tooltip && self.tray.set_tooltip(Some(&tooltip)).is_ok() {
             self.last_tooltip = tooltip;

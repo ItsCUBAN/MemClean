@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { el, li, showView } from "./dom";
+import { type Lang, onLangChange, setLang, t, tKey } from "./i18n";
 
 // Debe coincidir con `Settings` en src-tauri/src/settings.rs.
 interface Settings {
@@ -15,10 +16,11 @@ interface Settings {
   start_with_windows: boolean;
   start_minimized: boolean;
   notifications: boolean;
+  language: "auto" | "es" | "en";
 }
 
 interface SettingsInfo {
-  areas: { id: string; label: string }[];
+  areas: string[];
   configPath: string;
   thresholdRange: [number, number];
   cooldownRange: [number, number];
@@ -28,6 +30,7 @@ interface SettingsInfo {
 interface SaveResult {
   settings: Settings;
   warnings: string[];
+  language: Lang;
 }
 
 // Casillas cuyo nombre coincide con un ajuste de sí/no.
@@ -41,6 +44,7 @@ const CHECKBOXES = [
 ] as const;
 
 let current: Settings | null = null;
+let configPath = "";
 
 function form(): HTMLFormElement {
   return el("settings-form") as HTMLFormElement;
@@ -50,6 +54,12 @@ function field(name: string): HTMLInputElement {
   const input = form().elements.namedItem(name);
   if (!(input instanceof HTMLInputElement)) throw new Error(`Falta el campo ${name}`);
   return input;
+}
+
+function languageSelect(): HTMLSelectElement {
+  const select = form().elements.namedItem("language");
+  if (!(select instanceof HTMLSelectElement)) throw new Error("Falta el campo language");
+  return select;
 }
 
 function areaBoxes(): HTMLInputElement[] {
@@ -62,6 +72,7 @@ function fill(s: Settings) {
   field("cooldown_minutes").value = String(s.cooldown_minutes);
   field("interval_minutes").value = String(s.interval_minutes);
   for (const box of areaBoxes()) box.checked = s.areas.includes(box.value);
+  languageSelect().value = s.language;
   el("hotkey-label").textContent = s.hotkey;
   updateDependentFields();
 }
@@ -78,6 +89,8 @@ function read(base: Settings): Settings {
   s.cooldown_minutes = numberOr("cooldown_minutes", base.cooldown_minutes);
   s.interval_minutes = numberOr("interval_minutes", base.interval_minutes);
   s.areas = areaBoxes().filter((b) => b.checked).map((b) => b.value);
+  const language = languageSelect().value;
+  s.language = language === "es" || language === "en" ? language : "auto";
   return s;
 }
 
@@ -104,7 +117,7 @@ async function save(event: SubmitEvent) {
   if (!current) return;
   const wanted = read(current);
   if (wanted.areas.length === 0) {
-    setMessage("", ["Marca al menos un área para limpiar."]);
+    setMessage("", [t("pickOneArea")]);
     return;
   }
   const button = el("settings-save") as HTMLButtonElement;
@@ -112,11 +125,10 @@ async function save(event: SubmitEvent) {
   try {
     const result = await invoke<SaveResult>("save_settings", { settings: wanted });
     current = result.settings;
+    // Primero el idioma, para que el mensaje de abajo ya salga en el idioma nuevo.
+    setLang(result.language);
     fill(current); // por si Rust corrigió algún valor fuera de rango
-    setMessage(
-      result.warnings.length === 0 ? "Ajustes guardados." : "Guardado, pero con avisos:",
-      result.warnings,
-    );
+    setMessage(result.warnings.length === 0 ? t("saved") : t("savedWithWarnings"), result.warnings);
   } catch (e) {
     setMessage("", [String(e)]);
   } finally {
@@ -127,7 +139,7 @@ async function save(event: SubmitEvent) {
 export async function initSettings(onError: (message: string) => void) {
   const info = await invoke<SettingsInfo>("get_settings_info");
 
-  // Una casilla por área, con los nombres que da Rust.
+  // Una casilla por área. El nombre lleva data-i18n, así se traduce solo.
   el("areas-list").replaceChildren(
     ...info.areas.map((area) => {
       const label = document.createElement("label");
@@ -135,8 +147,11 @@ export async function initSettings(onError: (message: string) => void) {
       const box = document.createElement("input");
       box.type = "checkbox";
       box.name = "area";
-      box.value = area.id;
-      label.append(box, ` ${area.label}`);
+      box.value = area;
+      const text = document.createElement("span");
+      text.dataset.i18n = `area.${area}`;
+      text.textContent = tKey(`area.${area}`);
+      label.append(box, " ", text);
       return label;
     }),
   );
@@ -148,7 +163,13 @@ export async function initSettings(onError: (message: string) => void) {
   setRange("threshold_percent", info.thresholdRange);
   setRange("cooldown_minutes", info.cooldownRange);
   setRange("interval_minutes", info.intervalRange);
-  el("config-path").textContent = `Se guardan en ${info.configPath}`;
+
+  configPath = info.configPath;
+  const renderConfigPath = () => {
+    el("config-path").textContent = t("configPath", { path: configPath });
+  };
+  renderConfigPath();
+  onLangChange(renderConfigPath);
 
   form().addEventListener("input", updateDependentFields);
   form().addEventListener("submit", (e) => save(e as SubmitEvent));
