@@ -4,7 +4,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::auto::Trigger;
-use crate::cleaner::{self, Area};
+use crate::cleaner::Area;
 use crate::history::{History, HistoryEntry};
 use crate::i18n::{self, Lang};
 use crate::settings::{self, Settings, SettingsState};
@@ -13,14 +13,8 @@ use crate::{autostart, hotkey, memory, StartupIssues};
 
 /// La interfaz lo llama al arrancar para pintar datos sin esperar 1 segundo.
 #[tauri::command]
-pub fn get_memory() -> Result<memory::MemoryStats, String> {
-    memory::MemoryReader::new().read()
-}
-
-/// Para avisar en la ventana si falta ejecutar como administrador.
-#[tauri::command]
-pub fn is_admin() -> bool {
-    cleaner::privileges::is_elevated()
+pub fn get_memory(settings: State<SettingsState>) -> Result<memory::MemoryStats, String> {
+    memory::MemoryReader::new().read(settings.get().show_page_file)
 }
 
 /// Idioma en uso ("es" o "en"), ya resuelto si los ajustes dicen "automático".
@@ -51,28 +45,25 @@ pub fn get_settings(state: State<SettingsState>) -> Settings {
     state.get()
 }
 
-/// Lo que la pantalla de Ajustes necesita para dibujarse: las áreas (la ventana
-/// pone sus nombres en el idioma elegido), rangos permitidos y dónde se guarda el archivo.
+/// Lo que la pantalla de Ajustes necesita para dibujarse: las áreas de memoria y
+/// los extras (la ventana pone sus nombres en el idioma elegido) y los rangos permitidos.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsInfo {
-    areas: Vec<Area>,
-    config_path: String,
+    memory_areas: Vec<Area>,
+    extra_areas: Vec<Area>,
     threshold_range: (u8, u8),
     cooldown_range: (u32, u32),
-    interval_range: (u32, u32),
 }
 
 #[tauri::command]
 pub fn get_settings_info() -> SettingsInfo {
+    let (extra_areas, memory_areas) = Area::ALL.into_iter().partition(|a| a.is_extra());
     SettingsInfo {
-        areas: Area::ALL.to_vec(),
-        config_path: settings::config_path()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|e| e),
+        memory_areas,
+        extra_areas,
         threshold_range: settings::THRESHOLD_RANGE,
         cooldown_range: settings::COOLDOWN_RANGE,
-        interval_range: settings::INTERVAL_RANGE,
     }
 }
 

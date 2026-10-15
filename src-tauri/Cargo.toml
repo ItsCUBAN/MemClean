@@ -1,6 +1,6 @@
 [package]
 name = "memclean"
-version = "0.1.1"
+version = "0.2.0"
 description = "Limpiador de RAM de bandeja del sistema para Windows 11"
 license = "MIT"
 edition = "2021"
@@ -15,14 +15,19 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 toml = "1"
-sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_Globalization",
   "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_DataExchange",
   "Win32_System_Memory",
+  "Win32_System_ProcessStatus",
   "Win32_System_SystemInformation",
   "Win32_System_Threading",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 # Binario pequeño y con poco consumo de memoria en la versión final.

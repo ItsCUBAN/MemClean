@@ -20,24 +20,17 @@ const TEXTS = {
     es: "Usado {used} · Libre {free} · Total {total}",
     en: "Used {used} · Free {free} · Total {total}",
   },
+  noPageFile: { es: "Windows no tiene archivo de paginación.", en: "Windows has no page file." },
   cacheValues: { es: "Standby {standby} · Archivos {files}", en: "Standby {standby} · Files {files}" },
-  requiresAdmin: { es: "requiere admin", en: "requires admin" },
   notAvailable: { es: "no disponible", en: "not available" },
-  adminWarning: {
-    es: "MemClean no se está ejecutando como administrador: la limpieza fallará.",
-    en: "MemClean is not running as administrator: cleaning will fail.",
-  },
   clean: { es: "Limpiar memoria", en: "Clean memory" },
   cleaning: { es: "Limpiando…", en: "Cleaning…" },
   settings: { es: "Ajustes", en: "Settings" },
-  neverCleaned: { es: "Todavía no se ha limpiado.", en: "No cleaning yet." },
-  lastClean: {
-    es: "Última limpieza: {time} · {freed} liberados",
-    en: "Last cleaning: {time} · {freed} freed",
-  },
   allAreasOk: { es: "✓ Todas las áreas ({n})", en: "✓ All areas ({n})" },
   oneAreaOk: { es: "✓ 1 área bien", en: "✓ 1 area OK" },
   someAreasOk: { es: "✓ {n} áreas bien", en: "✓ {n} areas OK" },
+  tempDeleted: { es: "✓ {size} de archivos temporales borrados", en: "✓ {size} of temporary files deleted" },
+  diskShort: { es: "{size} disco", en: "{size} disk" },
   history: { es: "Historial", en: "History" },
   last10: { es: "últimas 10", en: "last 10" },
 
@@ -46,15 +39,18 @@ const TEXTS = {
   "trigger.tray": { es: "Limpieza manual", en: "Manual cleaning" },
   "trigger.hotkey": { es: "Limpieza con atajo", en: "Hotkey cleaning" },
   "trigger.threshold": { es: "Limpieza automática", en: "Automatic cleaning" },
-  "trigger.interval": { es: "Limpieza programada", en: "Scheduled cleaning" },
 
   // Áreas (src-tauri/src/cleaner/mod.rs → Area)
   "area.workingSets": { es: "Working sets de procesos", en: "Process working sets" },
   "area.systemFileCache": { es: "Caché de archivos del sistema", en: "System file cache" },
   "area.modifiedList": { es: "Lista Modified", en: "Modified list" },
   "area.standbyList": { es: "Lista Standby", en: "Standby list" },
-  "area.lowPriorityStandby": { es: "Standby de baja prioridad", en: "Low-priority standby" },
-  "area.combineMemoryLists": { es: "Combinar listas de memoria", en: "Combine memory lists" },
+  "area.clipboard": { es: "Vaciar el portapapeles", en: "Empty the clipboard" },
+  "area.dnsCache": { es: "Vaciar la caché DNS", en: "Flush the DNS cache" },
+  "area.tempFiles": {
+    es: "Borrar archivos temporales (de más de 24 h)",
+    en: "Delete temporary files (older than 24 h)",
+  },
 
   // Pantalla de Ajustes
   back: { es: "← Volver", en: "← Back" },
@@ -62,31 +58,37 @@ const TEXTS = {
   enabled: { es: "Activada", en: "Enabled" },
   thresholdLabel: { es: "Limpiar al llegar al", en: "Clean when RAM reaches" },
   cooldownLabel: { es: "Espera entre limpiezas", en: "Wait between cleanings" },
-  intervalLabel: { es: "Limpiar también cada", en: "Also clean every" },
   minutes: { es: "min", en: "min" },
   areasSection: { es: "Áreas a limpiar", en: "Areas to clean" },
+  trimLabel: { es: "Recortar procesos", en: "Trim processes" },
+  trimAll: { es: "Todos", en: "All" },
+  trimApps: { es: "Solo apps (sin Windows)", en: "Apps only (not Windows)" },
+  extrasSection: { es: "Extras", en: "Extras" },
+  extrasNote: {
+    es: "Solo al limpiar a mano: botón, menú de la bandeja o Ctrl+F1.",
+    en: "Only when cleaning by hand: button, tray menu or Ctrl+F1.",
+  },
   generalSection: { es: "General", en: "General" },
   hotkey: { es: "Atajo global", en: "Global hotkey" },
   startWithWindows: { es: "Iniciar con Windows", en: "Start with Windows" },
   startMinimized: { es: "Iniciar minimizado (solo en la bandeja)", en: "Start minimized (tray only)" },
   notifications: { es: "Notificaciones", en: "Notifications" },
+  showPageFile: { es: "Mostrar archivo de paginación", en: "Show page file" },
   language: { es: "Idioma", en: "Language" },
   languageAuto: { es: "Automático (Windows)", en: "Automatic (Windows)" },
   save: { es: "Guardar", en: "Save" },
   saved: { es: "Ajustes guardados.", en: "Settings saved." },
   savedWithWarnings: { es: "Guardado, pero con avisos:", en: "Saved, with warnings:" },
-  pickOneArea: { es: "Marca al menos un área para limpiar.", en: "Select at least one area to clean." },
-  configPath: { es: "Se guardan en {path}", en: "Saved in {path}" },
+  pickOneArea: {
+    es: "Marca al menos un área de memoria para limpiar.",
+    en: "Select at least one memory area to clean.",
+  },
 } satisfies Record<string, Record<Lang, string>>;
 
 export type Key = keyof typeof TEXTS;
 
 let current: Lang = "es";
 const listeners: Array<() => void> = [];
-
-export function lang(): Lang {
-  return current;
-}
 
 /// Formato de hora y números según el idioma (por ejemplo 10:05:07 p. m. o 10:05:07 PM).
 export function locale(): string {

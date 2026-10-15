@@ -1,30 +1,28 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { el, li, showView } from "./dom";
-import { type Lang, onLangChange, setLang, t, tKey } from "./i18n";
+import { type Lang, setLang, t, tKey } from "./i18n";
 
 // Debe coincidir con `Settings` en src-tauri/src/settings.rs.
 interface Settings {
   auto_clean: boolean;
   threshold_percent: number;
   cooldown_minutes: number;
-  interval_enabled: boolean;
-  interval_minutes: number;
   areas: string[];
+  trim_scope: "all" | "apps";
   hotkey_enabled: boolean;
-  hotkey: string;
   start_with_windows: boolean;
   start_minimized: boolean;
   notifications: boolean;
+  show_page_file: boolean;
   language: "auto" | "es" | "en";
 }
 
 interface SettingsInfo {
-  areas: string[];
-  configPath: string;
+  memoryAreas: string[];
+  extraAreas: string[];
   thresholdRange: [number, number];
   cooldownRange: [number, number];
-  intervalRange: [number, number];
 }
 
 interface SaveResult {
@@ -36,15 +34,14 @@ interface SaveResult {
 // Casillas cuyo nombre coincide con un ajuste de sí/no.
 const CHECKBOXES = [
   "auto_clean",
-  "interval_enabled",
   "hotkey_enabled",
   "start_with_windows",
   "start_minimized",
   "notifications",
+  "show_page_file",
 ] as const;
 
 let current: Settings | null = null;
-let configPath = "";
 
 function form(): HTMLFormElement {
   return el("settings-form") as HTMLFormElement;
@@ -56,24 +53,39 @@ function field(name: string): HTMLInputElement {
   return input;
 }
 
-function languageSelect(): HTMLSelectElement {
-  const select = form().elements.namedItem("language");
-  if (!(select instanceof HTMLSelectElement)) throw new Error("Falta el campo language");
-  return select;
+function select(name: string): HTMLSelectElement {
+  const found = form().elements.namedItem(name);
+  if (!(found instanceof HTMLSelectElement)) throw new Error(`Falta el campo ${name}`);
+  return found;
 }
 
-function areaBoxes(): HTMLInputElement[] {
-  return Array.from(form().querySelectorAll<HTMLInputElement>('input[name="area"]'));
+// Casillas de áreas: las de memoria (#areas-list) y los extras (#extras-list).
+function areaBoxes(list = "#settings-form"): HTMLInputElement[] {
+  return Array.from(document.querySelectorAll<HTMLInputElement>(`${list} input[name="area"]`));
+}
+
+// Una casilla por área. El nombre lleva data-i18n, así se traduce solo.
+function areaCheckbox(area: string): HTMLLabelElement {
+  const label = document.createElement("label");
+  label.className = "check";
+  const box = document.createElement("input");
+  box.type = "checkbox";
+  box.name = "area";
+  box.value = area;
+  const text = document.createElement("span");
+  text.dataset.i18n = `area.${area}`;
+  text.textContent = tKey(`area.${area}`);
+  label.append(box, " ", text);
+  return label;
 }
 
 function fill(s: Settings) {
   for (const name of CHECKBOXES) field(name).checked = s[name];
   field("threshold_percent").value = String(s.threshold_percent);
   field("cooldown_minutes").value = String(s.cooldown_minutes);
-  field("interval_minutes").value = String(s.interval_minutes);
   for (const box of areaBoxes()) box.checked = s.areas.includes(box.value);
-  languageSelect().value = s.language;
-  el("hotkey-label").textContent = s.hotkey;
+  select("trim_scope").value = s.trim_scope;
+  select("language").value = s.language;
   updateDependentFields();
 }
 
@@ -87,16 +99,18 @@ function read(base: Settings): Settings {
   for (const name of CHECKBOXES) s[name] = field(name).checked;
   s.threshold_percent = numberOr("threshold_percent", base.threshold_percent);
   s.cooldown_minutes = numberOr("cooldown_minutes", base.cooldown_minutes);
-  s.interval_minutes = numberOr("interval_minutes", base.interval_minutes);
   s.areas = areaBoxes().filter((b) => b.checked).map((b) => b.value);
-  const language = languageSelect().value;
+  s.trim_scope = select("trim_scope").value === "apps" ? "apps" : "all";
+  const language = select("language").value;
   s.language = language === "es" || language === "en" ? language : "auto";
   return s;
 }
 
 function updateDependentFields() {
   el("threshold-out").textContent = `${field("threshold_percent").value} %`;
-  field("interval_minutes").disabled = !field("interval_enabled").checked;
+  // "Recortar procesos" solo tiene sentido con "Working sets" marcado.
+  const workingSets = areaBoxes().find((b) => b.value === "workingSets");
+  select("trim_scope").disabled = !workingSets?.checked;
 }
 
 function setMessage(ok: string, problems: string[] = []) {
@@ -116,7 +130,7 @@ async function save(event: SubmitEvent) {
   event.preventDefault();
   if (!current) return;
   const wanted = read(current);
-  if (wanted.areas.length === 0) {
+  if (!areaBoxes("#areas-list").some((b) => b.checked)) {
     setMessage("", [t("pickOneArea")]);
     return;
   }
@@ -139,22 +153,8 @@ async function save(event: SubmitEvent) {
 export async function initSettings(onError: (message: string) => void) {
   const info = await invoke<SettingsInfo>("get_settings_info");
 
-  // Una casilla por área. El nombre lleva data-i18n, así se traduce solo.
-  el("areas-list").replaceChildren(
-    ...info.areas.map((area) => {
-      const label = document.createElement("label");
-      label.className = "check";
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.name = "area";
-      box.value = area;
-      const text = document.createElement("span");
-      text.dataset.i18n = `area.${area}`;
-      text.textContent = tKey(`area.${area}`);
-      label.append(box, " ", text);
-      return label;
-    }),
-  );
+  el("areas-list").replaceChildren(...info.memoryAreas.map(areaCheckbox));
+  el("extras-list").replaceChildren(...info.extraAreas.map(areaCheckbox));
 
   const setRange = (name: string, [min, max]: [number, number]) => {
     field(name).min = String(min);
@@ -162,14 +162,6 @@ export async function initSettings(onError: (message: string) => void) {
   };
   setRange("threshold_percent", info.thresholdRange);
   setRange("cooldown_minutes", info.cooldownRange);
-  setRange("interval_minutes", info.intervalRange);
-
-  configPath = info.configPath;
-  const renderConfigPath = () => {
-    el("config-path").textContent = t("configPath", { path: configPath });
-  };
-  renderConfigPath();
-  onLangChange(renderConfigPath);
 
   form().addEventListener("input", updateDependentFields);
   form().addEventListener("submit", (e) => save(e as SubmitEvent));

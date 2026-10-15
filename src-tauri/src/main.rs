@@ -63,11 +63,12 @@ pub fn start_clean(app: &AppHandle, trigger: Trigger) {
     // Se apunta ya, para que la limpieza automática no se dispare mientras tanto.
     app.state::<AutoState>().mark_cleaned();
     let settings = app.state::<SettingsState>().get();
+    let areas = settings.areas_for(trigger);
 
     let app = app.clone();
     thread::spawn(move || {
         let _ = app.emit("clean-started", ());
-        match cleaner::clean(&settings.areas) {
+        match cleaner::clean(&areas, settings.trim_scope) {
             Ok(report) => {
                 let entry = app.state::<History>().push(trigger, report);
                 // Con el botón ya se ve el resultado en la ventana; en el resto, aviso de Windows.
@@ -88,6 +89,14 @@ fn notify(app: &AppHandle, entry: &HistoryEntry) {
     let label = entry.trigger.label();
     let freed = format_freed(entry.report.freed_bytes);
     let mut body = tr(format!("{label}: {freed} liberados."), format!("{label}: {freed} freed."));
+    let disk = entry.report.disk_freed_bytes;
+    if disk > 0 {
+        let disk = format_freed(i64::try_from(disk).unwrap_or(i64::MAX));
+        body.push_str(&tr(
+            format!(" Archivos temporales: {disk} de disco."),
+            format!(" Temporary files: {disk} of disk."),
+        ));
+    }
     if failed > 0 {
         body.push_str(&tr(
             format!(" {failed} área(s) fallaron; ábrela para ver el motivo."),
@@ -114,18 +123,16 @@ fn monitor(app: AppHandle, tray_icon: tauri::tray::TrayIcon) {
     let mut reader = memory::MemoryReader::new();
     let mut updater = tray::TrayUpdater::new(tray_icon);
     loop {
-        match reader.read() {
+        // Se leen cada vez, así un cambio en Ajustes se nota al segundo siguiente.
+        let settings = app.state::<SettingsState>().get();
+        match reader.read(settings.show_page_file) {
             Ok(stats) => {
                 updater.update(&stats);
-                // Se leen cada vez, así un cambio en Ajustes se nota al segundo siguiente.
-                let settings = app.state::<SettingsState>().get();
-                let auto_state = app.state::<AutoState>();
                 let decision = auto::decide(
                     &settings.policy(),
                     settings.auto_clean,
                     stats.phys_percent,
-                    auto_state.since_last_clean(),
-                    auto_state.since_start(),
+                    app.state::<AutoState>().since_last_clean(),
                 );
                 if let Some(trigger) = decision {
                     start_clean(&app, trigger);
@@ -170,7 +177,6 @@ fn main() {
         .manage(StartupIssues(Mutex::new(settings_warning.into_iter().collect())))
         .invoke_handler(tauri::generate_handler![
             commands::get_memory,
-            commands::is_admin,
             commands::get_language,
             commands::get_history,
             commands::get_startup_issues,

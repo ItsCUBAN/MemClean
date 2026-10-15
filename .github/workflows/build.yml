@@ -1,9 +1,9 @@
 # Compila MemClean en los servidores Windows de GitHub.
 #
-# - En cada push a main y en cada pull request: tests + instaladores
-#   (se descargan desde la pestaña "Actions" → la ejecución → "Artifacts").
+# - En cada push a main y en cada pull request: tests + instalador
+#   (se descarga desde la pestaña "Actions" → la ejecución → "Artifacts").
 # - Al subir una etiqueta de versión (por ejemplo v0.1.0): además crea un
-#   borrador de "Release" con el .msi y el .exe adjuntos. Es un borrador:
+#   borrador de "Release" con el instalador .exe adjunto. Es un borrador:
 #   no se publica hasta que tú lo revises y pulses "Publish".
 name: Compilar MemClean
 
@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   build:
-    name: Tests e instaladores
+    name: Tests e instalador
     runs-on: windows-latest
     steps:
       - name: Descargar el código
@@ -46,16 +46,14 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
-      - name: Compilar los instaladores (.msi y .exe)
+      - name: Compilar el instalador (.exe, en español e inglés)
         run: npm run tauri build
 
-      - name: Guardar los instaladores
+      - name: Guardar el instalador
         uses: actions/upload-artifact@v7
         with:
-          name: MemClean-instaladores
-          path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
+          name: MemClean-instalador
+          path: src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
 
   release:
@@ -66,14 +64,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Recoger los instaladores
+      - name: Recoger el instalador
         uses: actions/download-artifact@v8
         with:
-          name: MemClean-instaladores
-          path: instaladores
+          name: MemClean-instalador
+          path: instalador
 
       - name: Crear el borrador de Release
         uses: softprops/action-gh-release@v3
         with:
           draft: true
-          files: instaladores/**/*
+          files: instalador/**/*

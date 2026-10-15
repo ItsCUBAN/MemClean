@@ -1,12 +1,11 @@
 //! Dibuja el icono de la bandeja: un cuadrado de color con el % de RAM en cifras.
 //!
-//! No usamos fuentes del sistema: cada cifra es una rejilla de 3x5 "cuadritos"
-//! que se amplía. Así el número se lee nítido incluso a 16x16 píxeles.
+//! No usamos fuentes del sistema: cada cifra es una rejilla de 4x7 píxeles.
+//! El icono se dibuja ya al tamaño de la bandeja (16x16 con la pantalla al 100 %),
+//! así Windows no tiene que reducirlo y las cifras se ven nítidas.
 
-/// Lado del icono en píxeles (Windows lo reduce a 16x16 si la pantalla es al 100 %).
-pub const SIZE: u32 = 32;
-
-const CORNER_RADIUS: i32 = 6;
+use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetSystemMetricsForDpi};
+use windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON;
 
 /// Nivel de uso de RAM, que decide el color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,89 +36,85 @@ impl Level {
     }
 }
 
-/// Cada cifra: 5 filas de 3 bits (1 = cuadrito pintado).
-const DIGITS: [[u8; 5]; 10] = [
-    [0b111, 0b101, 0b101, 0b101, 0b111], // 0
-    [0b010, 0b110, 0b010, 0b010, 0b111], // 1
-    [0b111, 0b001, 0b111, 0b100, 0b111], // 2
-    [0b111, 0b001, 0b111, 0b001, 0b111], // 3
-    [0b101, 0b101, 0b111, 0b001, 0b001], // 4
-    [0b111, 0b100, 0b111, 0b001, 0b111], // 5
-    [0b111, 0b100, 0b111, 0b101, 0b111], // 6
-    [0b111, 0b001, 0b001, 0b001, 0b001], // 7
-    [0b111, 0b101, 0b111, 0b101, 0b111], // 8
-    [0b111, 0b101, 0b111, 0b001, 0b111], // 9
+const GLYPH_W: u32 = 4;
+const GLYPH_H: u32 = 7;
+
+/// Cada cifra: 7 filas de 4 bits (1 = píxel pintado).
+const DIGITS: [[u8; GLYPH_H as usize]; 10] = [
+    [0b0110, 0b1001, 0b1001, 0b1001, 0b1001, 0b1001, 0b0110], // 0
+    [0b0010, 0b0110, 0b0010, 0b0010, 0b0010, 0b0010, 0b0111], // 1
+    [0b0110, 0b1001, 0b0001, 0b0010, 0b0100, 0b1000, 0b1111], // 2
+    [0b0110, 0b1001, 0b0001, 0b0110, 0b0001, 0b1001, 0b0110], // 3
+    [0b0010, 0b0110, 0b1010, 0b1010, 0b1111, 0b0010, 0b0010], // 4
+    [0b1111, 0b1000, 0b1110, 0b0001, 0b0001, 0b1001, 0b0110], // 5
+    [0b0110, 0b1000, 0b1000, 0b1110, 0b1001, 0b1001, 0b0110], // 6
+    [0b1111, 0b0001, 0b0010, 0b0010, 0b0100, 0b0100, 0b0100], // 7
+    [0b0110, 0b1001, 0b1001, 0b0110, 0b1001, 0b1001, 0b0110], // 8
+    [0b0110, 0b1001, 0b1001, 0b0111, 0b0001, 0b0001, 0b0110], // 9
 ];
 
-/// Devuelve los píxeles RGBA (SIZE x SIZE) del icono para un % dado (0–100).
-pub fn render(percent: u8) -> Vec<u8> {
+/// Lado del icono de la bandeja en píxeles: 16 con la pantalla al 100 %, 24 al 150 %…
+pub fn tray_size() -> u32 {
+    // SAFETY: solo leen ajustes de la pantalla; no reciben punteros.
+    let size = unsafe { GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem()) };
+    u32::try_from(size).ok().filter(|s| (16..=64).contains(s)).unwrap_or(16)
+}
+
+/// Devuelve los píxeles RGBA (size x size) del icono para un % dado (0–100).
+pub fn render(percent: u8, size: u32) -> Vec<u8> {
     let percent = percent.min(100);
     let (bg, fg) = Level::from_percent(percent).colors();
-    let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
 
-    for y in 0..SIZE as i32 {
-        for x in 0..SIZE as i32 {
-            if inside_rounded_square(x, y) {
-                put(&mut pixels, x, y, bg);
-            }
-        }
-    }
+    // Fondo: el cuadrado entero.
+    let mut pixels = bg.repeat((size * size) as usize);
 
-    // Con 3 cifras ("100") hay que encogerlas un poco para que quepan.
+    // Las cifras se amplían (x2 al 200 %…) solo si caben enteras.
     let text = percent.to_string();
-    let count = text.len() as i32;
-    let scale: i32 = if count >= 3 { 3 } else { 4 };
-    let gap = if count >= 3 { 2 } else { scale };
-    let (glyph_w, glyph_h) = (3 * scale, 5 * scale);
-    let total_w = glyph_w * count + gap * (count - 1);
-    let mut left = (SIZE as i32 - total_w) / 2;
-    let top = (SIZE as i32 - glyph_h) / 2;
+    let count = text.len() as u32;
+    let text_w = count * GLYPH_W + (count - 1);
+    let scale = (1..=(size / 16).max(1)).rev().find(|s| text_w * s <= size).unwrap_or(1);
+    let mut left = (size.saturating_sub(text_w * scale)) / 2;
+    let top = (size + 1).saturating_sub(GLYPH_H * scale) / 2;
 
     for ch in text.bytes() {
         let glyph = &DIGITS[usize::from(ch - b'0')];
-        for (row, bits) in glyph.iter().enumerate() {
-            for col in 0..3 {
-                if bits & (0b100 >> col) != 0 {
-                    let x0 = left + col * scale;
-                    let y0 = top + row as i32 * scale;
-                    for dy in 0..scale {
-                        for dx in 0..scale {
-                            put(&mut pixels, x0 + dx, y0 + dy, fg);
-                        }
+        for (row, bits) in (0..).zip(glyph) {
+            for col in 0..GLYPH_W {
+                if bits & (0b1000 >> col) == 0 {
+                    continue;
+                }
+                for dy in 0..scale {
+                    for dx in 0..scale {
+                        put(&mut pixels, size, left + col * scale + dx, top + row * scale + dy, fg);
                     }
                 }
             }
         }
-        left += glyph_w + gap;
+        left += (GLYPH_W + 1) * scale;
     }
     pixels
 }
 
-fn put(pixels: &mut [u8], x: i32, y: i32, color: [u8; 4]) {
-    if (0..SIZE as i32).contains(&x) && (0..SIZE as i32).contains(&y) {
-        let i = ((y as u32 * SIZE + x as u32) * 4) as usize;
+fn put(pixels: &mut [u8], size: u32, x: u32, y: u32, color: [u8; 4]) {
+    if x < size && y < size {
+        let i = ((y * size + x) * 4) as usize;
         pixels[i..i + 4].copy_from_slice(&color);
     }
-}
-
-/// ¿Está el píxel dentro del cuadrado con esquinas redondeadas?
-fn inside_rounded_square(x: i32, y: i32) -> bool {
-    let max = SIZE as i32 - 1;
-    let r = CORNER_RADIUS;
-    // Centro del círculo de la esquina más cercana (si el píxel está en una esquina).
-    let cx = if x < r { r } else if x > max - r { max - r } else { return true };
-    let cy = if y < r { r } else if y > max - r { max - r } else { return true };
-    let (dx, dy) = (x - cx, y - cy);
-    dx * dx + dy * dy <= r * r
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn pixel(pixels: &[u8], x: u32, y: u32) -> [u8; 4] {
-        let i = ((y * SIZE + x) * 4) as usize;
+    fn pixel(pixels: &[u8], size: u32, x: u32, y: u32) -> [u8; 4] {
+        let i = ((y * size + x) * 4) as usize;
         [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]]
+    }
+
+    fn painted(percent: u8, size: u32) -> usize {
+        let pixels = render(percent, size);
+        let fg = Level::from_percent(percent).colors().1;
+        (0..size * size).filter(|i| pixel(&pixels, size, i % size, i / size) == fg).count()
     }
 
     #[test]
@@ -134,35 +129,43 @@ mod tests {
 
     #[test]
     fn buffer_has_right_size() {
-        for p in [0, 7, 42, 99, 100, 255] {
-            assert_eq!(render(p).len(), (SIZE * SIZE * 4) as usize);
+        for size in [16, 24, 32] {
+            for p in [0, 7, 42, 99, 100, 255] {
+                assert_eq!(render(p, size).len(), (size * size * 4) as usize);
+            }
         }
     }
 
     #[test]
-    fn corners_are_transparent_and_center_has_color() {
-        let pixels = render(42);
-        assert_eq!(pixel(&pixels, 0, 0)[3], 0);
-        assert_eq!(pixel(&pixels, SIZE - 1, SIZE - 1)[3], 0);
-        assert_eq!(pixel(&pixels, 1, SIZE / 2)[3], 255);
+    fn background_fills_the_whole_square_with_the_level_color() {
+        for (percent, level) in [(30, Level::Green), (65, Level::Yellow), (85, Level::Red)] {
+            let pixels = render(percent, 16);
+            let bg = level.colors().0;
+            for (x, y) in [(0, 0), (15, 0), (0, 15), (15, 15)] {
+                assert_eq!(pixel(&pixels, 16, x, y), bg);
+            }
+        }
     }
 
     #[test]
-    fn background_color_follows_level() {
-        // El píxel (1, 16) es fondo, nunca cifra.
-        assert_eq!(pixel(&render(30), 1, 16), Level::Green.colors().0);
-        assert_eq!(pixel(&render(65), 1, 16), Level::Yellow.colors().0);
-        assert_eq!(pixel(&render(85), 1, 16), Level::Red.colors().0);
+    fn digits_are_drawn_whole() {
+        // Un "8" pinta 14 píxeles; un "1", 10; un "0", 14.
+        assert_eq!(painted(88, 16), 2 * 14);
+        // "100" cabe entero a 16x16: no se pierde ningún píxel por el borde.
+        assert_eq!(painted(100, 16), 10 + 14 + 14);
     }
 
     #[test]
-    fn digits_are_drawn() {
-        let pixels = render(88);
-        let fg = Level::Red.colors().1;
-        let painted = (0..SIZE * SIZE)
-            .filter(|i| pixel(&pixels, i % SIZE, i / SIZE) == fg)
-            .count();
-        // "8" usa 13 cuadritos de 4x4 píxeles; dos ochos = 2 * 13 * 16.
-        assert_eq!(painted, 2 * 13 * 16);
+    fn digits_grow_only_when_they_fit() {
+        // Al 200 % (32x32) las cifras se dibujan al doble: 4 píxeles por cada uno.
+        assert_eq!(painted(88, 32), 4 * 2 * 14);
+        assert_eq!(painted(100, 32), 4 * (10 + 14 + 14));
+        // Al 150 % (24x24), "100" al doble no cabría: se queda a tamaño normal.
+        assert_eq!(painted(100, 24), 10 + 14 + 14);
+    }
+
+    #[test]
+    fn tray_size_is_sane() {
+        assert!((16..=64).contains(&tray_size()));
     }
 }

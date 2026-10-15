@@ -5,35 +5,46 @@ use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::auto::Policy;
-use crate::cleaner::Area;
+use crate::auto::{Policy, Trigger};
+use crate::cleaner::{Area, TrimScope};
 use crate::i18n::{tr, LanguagePref};
 
 pub const THRESHOLD_RANGE: (u8, u8) = (50, 95);
 pub const COOLDOWN_RANGE: (u32, u32) = (1, 120);
-pub const INTERVAL_RANGE: (u32, u32) = (5, 1440);
 
 /// Todo lo que el usuario puede cambiar. `#[serde(default)]` hace que, si al
 /// archivo le falta algún ajuste (por ejemplo, de una versión anterior),
-/// se use su valor por defecto en vez de fallar.
+/// se use su valor por defecto en vez de fallar. Los ajustes que ya no existen
+/// (por ejemplo, la limpieza por intervalo de la 0.1.x) simplemente se ignoran.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub auto_clean: bool,
     pub threshold_percent: u8,
     pub cooldown_minutes: u32,
-    pub interval_enabled: bool,
-    pub interval_minutes: u32,
+    /// Áreas de memoria y extras marcados.
+    #[serde(deserialize_with = "known_areas")]
     pub areas: Vec<Area>,
+    /// Qué procesos recorta "Working sets": todos o solo las apps.
+    pub trim_scope: TrimScope,
+    /// Atajo global Ctrl+F1 activado o no.
     pub hotkey_enabled: bool,
-    pub hotkey: String,
     pub start_with_windows: bool,
     pub start_minimized: bool,
     pub notifications: bool,
+    /// Bloque "Archivo de paginación" en la ventana.
+    pub show_page_file: bool,
     /// "auto" (idioma de Windows), "es" o "en".
     pub language: LanguagePref,
+}
+
+/// Lee la lista de áreas saltándose las que ya no existen, en vez de
+/// rechazar todo el archivo de ajustes por una sola.
+fn known_areas<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Area>, D::Error> {
+    let ids = Vec::<String>::deserialize(deserializer)?;
+    Ok(ids.iter().filter_map(|id| Area::from_id(id)).collect())
 }
 
 impl Default for Settings {
@@ -42,14 +53,13 @@ impl Default for Settings {
             auto_clean: true,
             threshold_percent: 70,
             cooldown_minutes: 5,
-            interval_enabled: false,
-            interval_minutes: 30,
             areas: Area::defaults(),
+            trim_scope: TrimScope::All,
             hotkey_enabled: true,
-            hotkey: "Ctrl+F1".into(),
             start_with_windows: false,
             start_minimized: false,
             notifications: true,
+            show_page_file: false,
             language: LanguagePref::Auto,
         }
     }
@@ -57,41 +67,40 @@ impl Default for Settings {
 
 impl Settings {
     /// Corrige valores fuera de rango, quita áreas repetidas y las ordena.
-    /// Si no queda ningún área, vuelve a las de por defecto.
+    /// Si no queda ningún área de memoria, vuelven las de por defecto (los extras se mantienen).
     pub fn sanitized(mut self) -> Self {
         self.threshold_percent = self.threshold_percent.clamp(THRESHOLD_RANGE.0, THRESHOLD_RANGE.1);
         self.cooldown_minutes = self.cooldown_minutes.clamp(COOLDOWN_RANGE.0, COOLDOWN_RANGE.1);
-        self.interval_minutes = self.interval_minutes.clamp(INTERVAL_RANGE.0, INTERVAL_RANGE.1);
-        self.areas = Area::ALL.into_iter().filter(|a| self.areas.contains(a)).collect();
-        if self.areas.is_empty() {
-            self.areas = Area::defaults();
-        }
-        self.hotkey = self.hotkey.trim().to_string();
-        if self.hotkey.is_empty() {
-            self.hotkey = Settings::default().hotkey;
-        }
+        let has_memory_area = self.areas.iter().any(|a| !a.is_extra());
+        self.areas = Area::ALL
+            .into_iter()
+            .filter(|a| self.areas.contains(a) || (!has_memory_area && !a.is_extra()))
+            .collect();
         self
     }
 
     /// Comprueba lo que llega desde la ventana antes de aceptarlo.
     pub fn validate(&self) -> Result<(), String> {
-        if self.areas.is_empty() {
+        if !self.areas.iter().any(|a| !a.is_extra()) {
             return Err(tr(
-                "Marca al menos un área para limpiar.",
-                "Select at least one area to clean.",
+                "Marca al menos un área de memoria para limpiar.",
+                "Select at least one memory area to clean.",
             )
             .into());
         }
         Ok(())
     }
 
+    /// Lo que se limpia según quién lanzó la limpieza: los extras, solo a mano.
+    pub fn areas_for(&self, trigger: Trigger) -> Vec<Area> {
+        let manual = trigger.is_manual();
+        self.areas.iter().copied().filter(|a| manual || !a.is_extra()).collect()
+    }
+
     pub fn policy(&self) -> Policy {
         Policy {
             threshold_percent: self.threshold_percent,
             cooldown: Duration::from_secs(u64::from(self.cooldown_minutes) * 60),
-            interval: self
-                .interval_enabled
-                .then(|| Duration::from_secs(u64::from(self.interval_minutes) * 60)),
         }
     }
 }
@@ -215,11 +224,75 @@ mod tests {
         assert!(s.auto_clean);
         assert_eq!(s.threshold_percent, 70);
         assert_eq!(s.cooldown_minutes, 5);
-        assert!(!s.interval_enabled);
-        assert_eq!(s.hotkey, "Ctrl+F1");
+        assert!(s.hotkey_enabled);
         assert_eq!(s.areas, Area::defaults());
         assert!(s.notifications);
+        assert!(!s.show_page_file);
+        assert_eq!(s.trim_scope, TrimScope::All);
         assert_eq!(s.language, LanguagePref::Auto);
+    }
+
+    #[test]
+    fn extras_only_run_when_cleaning_by_hand() {
+        let s = Settings {
+            areas: vec![Area::TempFiles, Area::Clipboard, Area::StandbyList],
+            ..Settings::default()
+        };
+        for trigger in [Trigger::Button, Trigger::Tray, Trigger::Hotkey] {
+            assert_eq!(s.areas_for(trigger), s.areas);
+        }
+        assert_eq!(s.areas_for(Trigger::Threshold), vec![Area::StandbyList]);
+    }
+
+    #[test]
+    fn at_least_one_memory_area_is_needed() {
+        let only_extras = Settings { areas: vec![Area::DnsCache], ..Settings::default() };
+        assert!(only_extras.validate().is_err());
+        // Al cargar un archivo así, vuelven las de memoria y se conserva el extra.
+        let mut expected = vec![Area::DnsCache];
+        expected.extend(Area::defaults());
+        assert_eq!(only_extras.sanitized().areas, expected);
+    }
+
+    #[test]
+    fn trim_scope_is_saved_as_text() {
+        let s: Settings = toml::from_str(r#"trim_scope = "apps""#).expect("toml");
+        assert_eq!(s.trim_scope, TrimScope::Apps);
+        let text = toml::to_string(&Settings::default()).expect("toml");
+        assert!(text.contains(r#"trim_scope = "all""#));
+    }
+
+    #[test]
+    fn config_from_0_1_x_loads_without_warning() {
+        // Ajustes que ya no existen (intervalo, atajo personalizado, dos áreas):
+        // se ignoran y el resto se conserva.
+        let path = temp_file("old-version");
+        fs::create_dir_all(path.parent().expect("carpeta")).expect("crear carpeta");
+        let old = r#"
+            auto_clean = false
+            threshold_percent = 80
+            interval_enabled = true
+            interval_minutes = 30
+            areas = ["workingSets", "lowPriorityStandby", "standbyList", "combineMemoryLists"]
+            hotkey_enabled = true
+            hotkey = "Ctrl+F2"
+            start_with_windows = true
+        "#;
+        fs::write(&path, old).expect("escribir");
+        let (s, warning) = load_from(&path);
+        assert_eq!(warning, None);
+        assert!(!s.auto_clean);
+        assert_eq!(s.threshold_percent, 80);
+        assert_eq!(s.areas, vec![Area::WorkingSets, Area::StandbyList]);
+        assert!(s.start_with_windows);
+        assert!(!s.show_page_file);
+        let _ = fs::remove_dir_all(path.parent().expect("carpeta"));
+    }
+
+    #[test]
+    fn only_removed_areas_fall_back_to_defaults() {
+        let s: Settings = toml::from_str(r#"areas = ["combineMemoryLists"]"#).expect("toml");
+        assert_eq!(s.sanitized().areas, Area::defaults());
     }
 
     #[test]
@@ -236,8 +309,10 @@ mod tests {
         let path = temp_file("roundtrip");
         let mut s = Settings::default();
         s.threshold_percent = 82;
-        s.areas = vec![Area::StandbyList, Area::CombineMemoryLists];
+        s.areas = vec![Area::TempFiles, Area::ModifiedList, Area::StandbyList];
+        s.trim_scope = TrimScope::Apps;
         s.start_minimized = true;
+        s.show_page_file = true;
         save_to(&path, &s).expect("guardar");
         let (loaded, warning) = load_from(&path);
         assert_eq!(warning, None);
@@ -277,13 +352,11 @@ mod tests {
         let s = Settings {
             threshold_percent: 99,
             cooldown_minutes: 0,
-            interval_minutes: 99_999,
             ..Settings::default()
         }
         .sanitized();
         assert_eq!(s.threshold_percent, 95);
         assert_eq!(s.cooldown_minutes, 1);
-        assert_eq!(s.interval_minutes, 1440);
 
         let low = Settings { threshold_percent: 10, ..Settings::default() }.sanitized();
         assert_eq!(low.threshold_percent, 50);
@@ -310,14 +383,10 @@ mod tests {
         let s = Settings {
             threshold_percent: 80,
             cooldown_minutes: 10,
-            interval_enabled: true,
-            interval_minutes: 60,
             ..Settings::default()
         };
         let p = s.policy();
         assert_eq!(p.threshold_percent, 80);
         assert_eq!(p.cooldown, Duration::from_secs(600));
-        assert_eq!(p.interval, Some(Duration::from_secs(3600)));
-        assert_eq!(Settings::default().policy().interval, None);
     }
 }

@@ -18,7 +18,8 @@
         <p class="values" id="phys-values" data-i18n="loading">Cargando…</p>
       </section>
 
-      <section class="block">
+      <!-- Oculto salvo que se active en Ajustes → General. -->
+      <section class="block" id="page-block" hidden>
         <header><span data-i18n="pageFile">Archivo de paginación</span><strong id="page-pct">–</strong></header>
         <div class="bar"><div id="page-bar" class="fill neutral"></div></div>
         <p class="values" id="page-values" data-i18n="loading">Cargando…</p>
@@ -31,16 +32,12 @@
       </section>
 
       <p id="memory-error" class="error" hidden></p>
-      <p id="admin-warning" class="warning" data-i18n="adminWarning" hidden>
-        MemClean no se está ejecutando como administrador: la limpieza fallará.
-      </p>
       <ul id="issues" class="area-results"></ul>
 
       <div class="actions">
         <button id="clean-btn" data-i18n="clean">Limpiar memoria</button>
         <button id="settings-btn" class="icon-btn" data-i18n-title="settings" title="Ajustes" aria-label="Ajustes">⚙</button>
       </div>
-      <p id="last-clean" class="values" data-i18n="neverCleaned">Todavía no se ha limpiado.</p>
       <ul id="area-results" class="area-results"></ul>
       <p id="error" class="error" hidden></p>
 
@@ -69,15 +66,24 @@
             <span data-i18n="cooldownLabel">Espera entre limpiezas</span>
             <span><input type="number" name="cooldown_minutes" class="num" /> <span data-i18n="minutes">min</span></span>
           </label>
-          <label class="field">
-            <span><input type="checkbox" name="interval_enabled" /> <span data-i18n="intervalLabel">Limpiar también cada</span></span>
-            <span><input type="number" name="interval_minutes" class="num" /> <span data-i18n="minutes">min</span></span>
-          </label>
         </section>
 
         <section class="block">
           <h2 data-i18n="areasSection">Áreas a limpiar</h2>
           <div id="areas-list"></div>
+          <label class="field">
+            <span data-i18n="trimLabel">Recortar procesos</span>
+            <select name="trim_scope" class="num select">
+              <option value="all" data-i18n="trimAll">Todos</option>
+              <option value="apps" data-i18n="trimApps">Solo apps (sin Windows)</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="block">
+          <h2 data-i18n="extrasSection">Extras</h2>
+          <div id="extras-list"></div>
+          <p class="values" data-i18n="extrasNote">Solo al limpiar a mano: botón, menú de la bandeja o Ctrl+F1.</p>
         </section>
 
         <section class="block">
@@ -92,19 +98,21 @@
           </label>
           <label class="check">
             <input type="checkbox" name="hotkey_enabled" /> <span data-i18n="hotkey">Atajo global</span>
-            <kbd id="hotkey-label">Ctrl+F1</kbd>
+            <kbd>Ctrl+F1</kbd>
           </label>
           <label class="check"><input type="checkbox" name="start_with_windows" /> <span data-i18n="startWithWindows">Iniciar con Windows</span></label>
           <label class="check">
             <input type="checkbox" name="start_minimized" /> <span data-i18n="startMinimized">Iniciar minimizado (solo en la bandeja)</span>
           </label>
           <label class="check"><input type="checkbox" name="notifications" /> <span data-i18n="notifications">Notificaciones</span></label>
+          <label class="check">
+            <input type="checkbox" name="show_page_file" /> <span data-i18n="showPageFile">Mostrar archivo de paginación</span>
+          </label>
         </section>
 
         <p id="settings-ok" class="ok-msg" hidden></p>
         <ul id="settings-problems" class="area-results"></ul>
         <button type="submit" id="settings-save" data-i18n="save">Guardar</button>
-        <p id="config-path" class="values small"></p>
       </form>
     </main>
   </body>

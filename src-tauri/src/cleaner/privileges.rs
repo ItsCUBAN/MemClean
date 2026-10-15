@@ -5,15 +5,11 @@
 //! - SeProfileSingleProcessPrivilege: para vaciar/purgar las listas de memoria.
 //! - SeIncreaseQuotaPrivilege: para cambiar el tamaño de la caché de archivos.
 
-use std::ffi::c_void;
-use std::mem::size_of;
-
 use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_NOT_ALL_ASSIGNED, HANDLE, LUID};
 use windows::Win32::Security::{
-    AdjustTokenPrivileges, GetTokenInformation, LookupPrivilegeValueW, TokenElevation,
-    LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_ACCESS_MASK,
-    TOKEN_ELEVATION, TOKEN_PRIVILEGES, TOKEN_QUERY,
+    AdjustTokenPrivileges, LookupPrivilegeValueW, LUID_AND_ATTRIBUTES, SE_PRIVILEGE_ENABLED,
+    TOKEN_ACCESS_MASK, TOKEN_ADJUST_PRIVILEGES, TOKEN_PRIVILEGES, TOKEN_QUERY,
 };
 use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -23,10 +19,10 @@ pub const PROFILE_SINGLE_PROCESS: PCWSTR = w!("SeProfileSingleProcessPrivilege")
 pub const INCREASE_QUOTA: PCWSTR = w!("SeIncreaseQuotaPrivilege");
 
 /// "Llave" de seguridad del proceso actual; se cierra sola al salir de uso.
-struct Token(HANDLE);
+pub(super) struct Token(pub(super) HANDLE);
 
 impl Token {
-    fn open(access: TOKEN_ACCESS_MASK) -> Result<Self, String> {
+    pub(super) fn open(access: TOKEN_ACCESS_MASK) -> Result<Self, String> {
         let mut handle = HANDLE::default();
         // SAFETY: pasamos un puntero válido donde Windows deja el identificador.
         unsafe { OpenProcessToken(GetCurrentProcess(), access, &mut handle) }
@@ -70,25 +66,4 @@ pub fn enable(name: PCWSTR) -> Result<(), String> {
         .into());
     }
     Ok(())
-}
-
-/// ¿Se está ejecutando MemClean como administrador?
-pub fn is_elevated() -> bool {
-    let Ok(token) = Token::open(TOKEN_QUERY) else {
-        return false;
-    };
-    let mut elevation = TOKEN_ELEVATION::default();
-    let mut returned = 0u32;
-    // SAFETY: el búfer es `elevation` y le pasamos su tamaño exacto.
-    let ok = unsafe {
-        GetTokenInformation(
-            token.0,
-            TokenElevation,
-            Some((&mut elevation as *mut TOKEN_ELEVATION).cast::<c_void>()),
-            size_of::<TOKEN_ELEVATION>() as u32,
-            &mut returned,
-        )
-    }
-    .is_ok();
-    ok && elevation.TokenIsElevated != 0
 }

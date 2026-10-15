@@ -10,9 +10,9 @@ interface MemoryStats {
   physAvail: number;
   physUsed: number;
   physPercent: number;
-  pageTotal: number;
-  pageUsed: number;
-  pageFree: number;
+  // null: el bloque está oculto en Ajustes (o hubo un error al leerlo).
+  pageFile: { total: number; used: number } | null;
+  pageFileError: string | null;
   standby: number | null;
   fileCache: number | null;
 }
@@ -26,12 +26,13 @@ interface AreaResult {
 interface CleanReport {
   timestampMs: number;
   freedBytes: number;
+  diskFreedBytes: number;
   results: AreaResult[];
 }
 
 // Debe coincidir con `HistoryEntry` en src-tauri/src/history.rs.
 interface HistoryEntry {
-  trigger: "button" | "tray" | "hotkey" | "threshold" | "interval";
+  trigger: "button" | "tray" | "hotkey" | "threshold";
   report: CleanReport;
 }
 
@@ -78,23 +79,35 @@ function render(s: MemoryStats) {
     total: gb(s.physTotal),
   });
 
-  const pagePct = pct(s.pageUsed, s.pageTotal);
-  el("page-pct").textContent = `${Math.round(pagePct)} %`;
-  setBar("page-bar", pagePct);
-  el("page-values").textContent = t("pageValues", {
-    used: gb(s.pageUsed),
-    free: gb(s.pageFree),
-    total: gb(s.pageTotal),
-  });
+  renderPageFile(s);
 
   const cacheTotal = (s.standby ?? 0) + (s.fileCache ?? 0);
   const cachePct = pct(cacheTotal, s.physTotal);
   el("cache-pct").textContent = `${Math.round(cachePct)} %`;
   setBar("cache-bar", cachePct);
   el("cache-values").textContent = t("cacheValues", {
-    standby: s.standby === null ? t("requiresAdmin") : gb(s.standby),
+    standby: s.standby === null ? t("notAvailable") : gb(s.standby),
     files: s.fileCache === null ? t("notAvailable") : gb(s.fileCache),
   });
+}
+
+// Solo se ve si está activado en Ajustes; si no, Rust ni siquiera lo lee.
+function renderPageFile(s: MemoryStats) {
+  el("page-block").hidden = s.pageFile === null && s.pageFileError === null;
+  if (s.pageFileError !== null) {
+    el("page-pct").textContent = "–";
+    setBar("page-bar", 0);
+    el("page-values").textContent = s.pageFileError;
+    return;
+  }
+  if (s.pageFile === null) return;
+
+  const { total, used } = s.pageFile;
+  const pagePct = pct(used, total);
+  el("page-pct").textContent = `${Math.round(pagePct)} %`;
+  setBar("page-bar", pagePct);
+  el("page-values").textContent =
+    total === 0 ? t("noPageFile") : t("pageValues", { used: gb(used), free: gb(total - used), total: gb(total) });
 }
 
 function showError(message: string, id = "error") {
@@ -131,6 +144,7 @@ function renderAreas(report: CleanReport) {
           : t("someAreasOk", { n: okCount });
     items.unshift(li("ok", summary));
   }
+  if (report.diskFreedBytes > 0) items.push(li("ok", t("tempDeleted", { size: freed(report.diskFreedBytes) })));
   el("area-results").replaceChildren(...items);
 }
 
@@ -139,12 +153,7 @@ function renderHistory(entries: HistoryEntry[]) {
   el("history-block").hidden = entries.length === 0;
   if (entries.length === 0) return;
 
-  const last = entries[0];
-  el("last-clean").textContent = t("lastClean", {
-    time: time(last.report.timestampMs),
-    freed: freed(last.report.freedBytes),
-  });
-  renderAreas(last.report);
+  renderAreas(entries[0].report);
 
   el("history").replaceChildren(
     ...entries.map((entry) => {
@@ -153,7 +162,9 @@ function renderHistory(entries: HistoryEntry[]) {
       when.textContent = `${time(entry.report.timestampMs)} · ${tKey(`trigger.${entry.trigger}`)}`;
       const amount = document.createElement("span");
       amount.className = "freed";
-      amount.textContent = freed(entry.report.freedBytes);
+      const disk = entry.report.diskFreedBytes;
+      amount.textContent =
+        freed(entry.report.freedBytes) + (disk > 0 ? ` + ${t("diskShort", { size: freed(disk) })}` : "");
       item.append(when, amount);
       return item;
     }),
@@ -178,7 +189,6 @@ async function start() {
   try {
     setLang(await invoke<Lang>("get_language"));
     render(await invoke<MemoryStats>("get_memory"));
-    el("admin-warning").hidden = await invoke<boolean>("is_admin");
     for (const issue of await invoke<string[]>("get_startup_issues")) addIssue(issue);
     await refreshHistory();
   } catch (e) {

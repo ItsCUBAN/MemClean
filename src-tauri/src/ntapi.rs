@@ -10,7 +10,6 @@ use crate::i18n::tr;
 
 const SYSTEM_FILE_CACHE_INFORMATION: u32 = 21;
 const SYSTEM_MEMORY_LIST_INFORMATION: u32 = 80;
-const SYSTEM_COMBINE_PHYSICAL_MEMORY_INFORMATION: u32 = 130;
 
 /// Órdenes que acepta `SystemMemoryListInformation` (enum SYSTEM_MEMORY_LIST_COMMAND).
 #[derive(Debug, Clone, Copy)]
@@ -19,7 +18,6 @@ pub enum MemoryListCommand {
     EmptyWorkingSets = 2,
     FlushModifiedList = 3,
     PurgeStandbyList = 4,
-    PurgeLowPriorityStandbyList = 5,
 }
 
 #[link(name = "ntdll")]
@@ -32,15 +30,6 @@ extern "system" {
     ) -> i32;
 
     fn NtSetSystemInformation(class: u32, info: *const c_void, info_len: u32) -> i32;
-}
-
-/// Estructura que pide Windows para combinar páginas de memoria idénticas.
-#[repr(C)]
-#[derive(Default)]
-struct MemoryCombineInformationEx {
-    handle: usize,
-    pages_combined: usize,
-    flags: u32,
 }
 
 /// Envía una estructura a Windows. Devuelve el código NTSTATUS si falla.
@@ -64,14 +53,6 @@ fn set<T>(class: u32, value: &T) -> Result<(), i32> {
 /// Ejecuta una orden sobre las listas de memoria (vaciar working sets, purgar Standby…).
 pub fn memory_list_command(command: MemoryListCommand) -> Result<(), i32> {
     set(SYSTEM_MEMORY_LIST_INFORMATION, &(command as i32))
-}
-
-/// Combina páginas de memoria que tienen exactamente el mismo contenido.
-pub fn combine_physical_memory() -> Result<(), i32> {
-    set(
-        SYSTEM_COMBINE_PHYSICAL_MEMORY_INFORMATION,
-        &MemoryCombineInformationEx::default(),
-    )
 }
 
 /// Traduce los códigos de error de Windows más habituales a algo comprensible.

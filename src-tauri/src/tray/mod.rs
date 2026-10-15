@@ -64,8 +64,9 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
 
     let auto_item = auto.clone();
     app.manage(TrayMenu { clean, show, auto, settings, quit });
+    let size = icon::tray_size();
     TrayIconBuilder::with_id("main")
-        .icon(Image::new_owned(icon::render(0), icon::SIZE, icon::SIZE))
+        .icon(Image::new_owned(icon::render(0, size), size, size))
         .tooltip("MemClean")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -92,19 +93,21 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
 /// Mantiene el icono al día sin redibujarlo si el número no ha cambiado.
 pub struct TrayUpdater {
     tray: TrayIcon,
+    /// Lado del icono en píxeles (el de la bandeja de Windows).
+    size: u32,
     last_percent: Option<u8>,
     last_tooltip: String,
 }
 
 impl TrayUpdater {
     pub fn new(tray: TrayIcon) -> Self {
-        Self { tray, last_percent: None, last_tooltip: String::new() }
+        Self { tray, size: icon::tray_size(), last_percent: None, last_tooltip: String::new() }
     }
 
     pub fn update(&mut self, stats: &MemoryStats) {
         let percent = stats.phys_percent.round().clamp(0.0, 100.0) as u8;
         if self.last_percent != Some(percent) {
-            let image = Image::new_owned(icon::render(percent), icon::SIZE, icon::SIZE);
+            let image = Image::new_owned(icon::render(percent, self.size), self.size, self.size);
             if self.tray.set_icon(Some(image)).is_ok() {
                 self.last_percent = Some(percent);
             }

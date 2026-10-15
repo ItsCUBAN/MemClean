@@ -1,57 +1,91 @@
 //! Limpieza de memoria: decide qué áreas limpiar, en qué orden, y mide lo liberado.
 
 mod areas;
+mod extras;
 pub mod privileges;
 
 use std::sync::{Mutex, TryLockError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::de::value::StrDeserializer;
+use serde::de::IntoDeserializer;
 use serde::{Deserialize, Serialize};
 
 use crate::i18n::tr;
 use crate::memory;
 
-/// Las zonas de memoria que MemClean sabe limpiar.
+/// Lo que MemClean sabe limpiar: zonas de memoria y "extras" que no son RAM.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Area {
+    // Extras (solo al limpiar a mano).
+    Clipboard,
+    DnsCache,
+    TempFiles,
+    // Memoria.
     WorkingSets,
     SystemFileCache,
     ModifiedList,
     StandbyList,
-    LowPriorityStandby,
-    CombineMemoryLists,
+}
+
+/// Qué procesos recorta el área "Working sets".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TrimScope {
+    /// Todos a la vez, con una sola orden a Windows.
+    #[default]
+    All,
+    /// Solo las apps: se salta los procesos de Windows.
+    Apps,
 }
 
 impl Area {
-    /// Orden en que se ejecutan. Primero se vacían los working sets y se vuelcan
-    /// las páginas modificadas, que acaban en Standby; después se purga Standby.
-    pub const ALL: [Area; 6] = [
+    /// Orden en que se ejecutan. Primero los extras; después se vacían los working sets
+    /// y se vuelcan las páginas modificadas, que acaban en Standby; al final se purga Standby.
+    pub const ALL: [Area; 7] = [
+        Area::Clipboard,
+        Area::DnsCache,
+        Area::TempFiles,
         Area::WorkingSets,
         Area::SystemFileCache,
         Area::ModifiedList,
         Area::StandbyList,
-        Area::LowPriorityStandby,
-        Area::CombineMemoryLists,
     ];
 
-    pub fn enabled_by_default(self) -> bool {
-        !matches!(self, Area::LowPriorityStandby | Area::CombineMemoryLists)
+    /// Los extras no liberan RAM: solo se hacen al limpiar a mano (botón, menú o
+    /// atajo), nunca en la limpieza automática.
+    pub fn is_extra(self) -> bool {
+        matches!(self, Area::Clipboard | Area::DnsCache | Area::TempFiles)
     }
 
+    /// Por defecto, todas las de memoria y ningún extra.
     pub fn defaults() -> Vec<Area> {
-        Area::ALL.into_iter().filter(|a| a.enabled_by_default()).collect()
+        Area::ALL.into_iter().filter(|a| !a.is_extra()).collect()
     }
 
-    fn run(self) -> Result<(), String> {
-        match self {
-            Area::WorkingSets => areas::working_sets(),
+    /// Convierte el nombre guardado en config.toml ("standbyList"…) en un área.
+    /// `None` si ese área ya no existe (por ejemplo, "combineMemoryLists" de la 0.1.x).
+    pub fn from_id(id: &str) -> Option<Area> {
+        let id: StrDeserializer<serde::de::value::Error> = id.into_deserializer();
+        Area::deserialize(id).ok()
+    }
+
+    /// Devuelve los bytes de disco liberados (solo cuentan en los archivos temporales).
+    fn run(self, trim: TrimScope) -> Result<u64, String> {
+        let result = match self {
+            Area::TempFiles => return extras::temp_files(),
+            Area::Clipboard => extras::clipboard(),
+            Area::DnsCache => extras::dns_cache(),
+            Area::WorkingSets => match trim {
+                TrimScope::All => areas::working_sets(),
+                TrimScope::Apps => areas::app_working_sets(),
+            },
             Area::SystemFileCache => areas::system_file_cache(),
             Area::ModifiedList => areas::modified_list(),
             Area::StandbyList => areas::standby_list(),
-            Area::LowPriorityStandby => areas::low_priority_standby(),
-            Area::CombineMemoryLists => areas::combine_memory_lists(),
-        }
+        };
+        result.map(|()| 0)
     }
 }
 
@@ -72,6 +106,8 @@ pub struct CleanReport {
     /// Disponible después menos disponible antes. Puede ser negativo si otro
     /// programa reservó memoria justo mientras limpiábamos.
     pub freed_bytes: i64,
+    /// Disco liberado al borrar archivos temporales (0 si no se borraron).
+    pub disk_freed_bytes: u64,
     pub results: Vec<AreaResult>,
 }
 
@@ -79,7 +115,7 @@ pub struct CleanReport {
 static CLEANING: Mutex<()> = Mutex::new(());
 
 /// Limpia las áreas pedidas, siempre en el orden de `Area::ALL`.
-pub fn clean(selected: &[Area]) -> Result<CleanReport, String> {
+pub fn clean(selected: &[Area], trim: TrimScope) -> Result<CleanReport, String> {
     let _guard = match CLEANING.try_lock() {
         Ok(guard) => guard,
         Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
@@ -102,17 +138,27 @@ pub fn clean(selected: &[Area]) -> Result<CleanReport, String> {
     let profile = privileges::enable(privileges::PROFILE_SINGLE_PROCESS).err();
     let quota = privileges::enable(privileges::INCREASE_QUOTA).err();
 
+    let mut disk_freed_bytes = 0;
     let results = Area::ALL
         .into_iter()
         .filter(|area| selected.contains(area))
         .map(|area| {
-            let error = area.run().err().map(|err| {
-                let privilege_error = match area {
-                    Area::SystemFileCache => &quota,
-                    _ => &profile,
-                };
-                privilege_error.clone().unwrap_or(err)
-            });
+            let error = match area.run(trim) {
+                Ok(disk) => {
+                    disk_freed_bytes += disk;
+                    None
+                }
+                Err(err) => {
+                    // Si faltaba el privilegio que usa el área, ese es el motivo real.
+                    let privilege_error = match area {
+                        Area::SystemFileCache => quota.as_ref(),
+                        Area::WorkingSets if trim == TrimScope::Apps => None,
+                        Area::WorkingSets | Area::ModifiedList | Area::StandbyList => profile.as_ref(),
+                        Area::Clipboard | Area::DnsCache | Area::TempFiles => None,
+                    };
+                    Some(privilege_error.cloned().unwrap_or(err))
+                }
+            };
             AreaResult { area, error }
         })
         .collect();
@@ -122,6 +168,7 @@ pub fn clean(selected: &[Area]) -> Result<CleanReport, String> {
     Ok(CleanReport {
         timestamp_ms: now_ms(),
         freed_bytes: freed_bytes(before, after),
+        disk_freed_bytes,
         results,
     })
 }
@@ -164,6 +211,25 @@ mod tests {
     }
 
     #[test]
+    fn extras_are_off_by_default_and_run_first() {
+        assert!(Area::defaults().iter().all(|a| !a.is_extra()));
+        let first_memory = Area::ALL.iter().position(|a| !a.is_extra());
+        let last_extra = Area::ALL.iter().rposition(|a| a.is_extra());
+        assert!(last_extra < first_memory);
+        assert_eq!(TrimScope::default(), TrimScope::All);
+    }
+
+    #[test]
+    fn area_ids_from_config() {
+        assert_eq!(Area::from_id("standbyList"), Some(Area::StandbyList));
+        assert_eq!(Area::from_id("workingSets"), Some(Area::WorkingSets));
+        assert_eq!(Area::from_id("tempFiles"), Some(Area::TempFiles));
+        // Áreas que existían en la 0.1.x y ya no.
+        assert_eq!(Area::from_id("lowPriorityStandby"), None);
+        assert_eq!(Area::from_id("combineMemoryLists"), None);
+    }
+
+    #[test]
     fn modified_is_flushed_before_standby_is_purged() {
         let pos = |a| Area::ALL.iter().position(|&x| x == a);
         assert!(pos(Area::ModifiedList) < pos(Area::StandbyList));
@@ -171,7 +237,7 @@ mod tests {
 
     #[test]
     fn nothing_selected_is_an_error_not_a_panic() {
-        assert!(clean(&[]).is_err());
+        assert!(clean(&[], TrimScope::All).is_err());
     }
 
     #[test]

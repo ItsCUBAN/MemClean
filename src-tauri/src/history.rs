@@ -45,7 +45,7 @@ mod tests {
     use super::*;
 
     fn report(freed: i64) -> CleanReport {
-        CleanReport { timestamp_ms: 0, freed_bytes: freed, results: Vec::new() }
+        CleanReport { timestamp_ms: 0, freed_bytes: freed, disk_freed_bytes: 0, results: Vec::new() }
     }
 
     #[test]
