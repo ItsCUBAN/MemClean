@@ -1,18 +1,20 @@
 //! Extras que no son RAM: caché DNS, archivos temporales y portapapeles.
 //! Solo se hacen al limpiar a mano (ver `Area::is_extra`).
 
+use std::ffi::OsString;
 use std::fs::{self, Metadata, OpenOptions};
+use std::os::windows::ffi::OsStringExt;
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use windows::core::PWSTR;
+use windows::core::{HSTRING, PWSTR};
 use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Security::TOKEN_QUERY;
 use windows::Win32::Storage::FileSystem::{
-    GetFinalPathNameByHandleW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
+    GetFinalPathNameByHandleW, GetLongPathNameW, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_NAME_NORMALIZED, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 use windows::Win32::System::DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard};
@@ -136,7 +138,8 @@ fn clean_temp_folder(folder: &Path, now: SystemTime) -> Result<u64, String> {
         .map_err(|e| fail(&e.to_string()))?;
     let meta = guard.metadata().map_err(|e| fail(&e.to_string()))?;
     let real = final_path(HANDLE(guard.as_raw_handle()));
-    if !meta.is_dir() || is_link(&meta) || !real.is_some_and(|real| same_path(&real, folder)) {
+    let expected = long_path(folder);
+    if !meta.is_dir() || is_link(&meta) || !real.is_some_and(|real| same_path(&real, &expected)) {
         return Err(fail(tr(
             "no es una carpeta normal (apunta a otro sitio); no se toca",
             "it is not a regular folder (it points elsewhere); left untouched",
@@ -204,6 +207,19 @@ fn final_path(handle: HANDLE) -> Option<String> {
     // SAFETY: `handle` es válido mientras dura la llamada y Windows no escribe fuera de `buffer`.
     let len = unsafe { GetFinalPathNameByHandleW(handle, &mut buffer, FILE_NAME_NORMALIZED) } as usize;
     (len > 0 && len < buffer.len()).then(|| String::from_utf16_lossy(&buffer[..len]))
+}
+
+/// Ruta con los nombres largos (C:\Users\runneradmin\…) aunque llegue en el formato
+/// corto antiguo (C:\Users\RUNNER~1\…). No resuelve enlaces: eso lo hace `final_path`.
+fn long_path(path: &Path) -> PathBuf {
+    let mut buffer = [0u16; 1024];
+    // SAFETY: la ruta de entrada es un HSTRING terminado en cero y Windows no escribe fuera de `buffer`.
+    let len = unsafe { GetLongPathNameW(&HSTRING::from(path), Some(&mut buffer)) } as usize;
+    if len > 0 && len < buffer.len() {
+        PathBuf::from(OsString::from_wide(&buffer[..len]))
+    } else {
+        path.to_path_buf()
+    }
 }
 
 /// Compara rutas sin distinguir mayúsculas, ni el prefijo \\?\ ni la barra final.
@@ -296,6 +312,25 @@ mod tests {
         assert!(mixed_dir.join("viejo.txt").exists(), "su carpeta tiene algo nuevo");
         assert!(temp.join("enlace").exists(), "los enlaces no se tocan");
         assert!(outside.join("viejo.txt").exists(), "nunca se borra fuera de Temp");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_short_8_3_path_is_accepted() {
+        use windows::Win32::Storage::FileSystem::GetShortPathNameW;
+        let root = test_dir("nombre-largo-para-8-3");
+        let temp = root.join("Temp");
+        fs::create_dir_all(&temp).expect("Temp");
+        write(&temp.join("viejo.txt"), "123");
+        make_old(&temp.join("viejo.txt"));
+
+        // La misma carpeta escrita en formato corto (si el disco lo permite).
+        let mut buffer = [0u16; 1024];
+        // SAFETY: entrada terminada en cero; Windows no escribe fuera de `buffer`.
+        let len = unsafe { GetShortPathNameW(&HSTRING::from(temp.as_path()), Some(&mut buffer)) } as usize;
+        let short = if len > 0 && len < buffer.len() { PathBuf::from(OsString::from_wide(&buffer[..len])) } else { temp.clone() };
+
+        assert_eq!(clean_temp_folder(&short, SystemTime::now()), Ok(3));
         let _ = fs::remove_dir_all(&root);
     }
 
